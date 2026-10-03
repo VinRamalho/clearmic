@@ -89,6 +89,7 @@ struct Session {
     spa_hook capture_listener{};
     spa_hook source_listener{};
     std::atomic<StreamError> error{StreamError::none};
+    std::atomic_bool shutting_down{};
     std::array<char, 256> error_detail{};
 };
 
@@ -109,10 +110,10 @@ const char* default_error_detail(const StreamError error) noexcept {
     return "PipeWire audio stream failed";
 }
 
-void set_stream_error(Session& session, const StreamError error, const char* detail = nullptr) noexcept {
+bool set_stream_error(Session& session, const StreamError error, const char* detail = nullptr) noexcept {
     auto expected = StreamError::none;
     if (!session.error.compare_exchange_strong(expected, StreamError::writing_detail,
-            std::memory_order_acq_rel, std::memory_order_relaxed)) return;
+            std::memory_order_acq_rel, std::memory_order_relaxed)) return false;
     const char* text = detail && detail[0] ? detail : default_error_detail(error);
     std::size_t length = 0;
     while (text[length] != '\0' && length + 1 < session.error_detail.size()) {
@@ -121,6 +122,7 @@ void set_stream_error(Session& session, const StreamError error, const char* det
     }
     session.error_detail[length] = '\0';
     session.error.store(error, std::memory_order_release);
+    return true;
 }
 
 std::atomic<spa_source*> pending_signal_event{};
@@ -162,10 +164,12 @@ void on_signal_event(void* data, std::uint64_t) {
 
 void state_changed(void* data, pw_stream_state old_state, pw_stream_state state, const char* detail) {
     auto& session = *static_cast<Session*>(data);
-    if (state == PW_STREAM_STATE_ERROR) set_stream_error(session, StreamError::stream_failure, detail);
-    else if (state == PW_STREAM_STATE_UNCONNECTED && old_state != PW_STREAM_STATE_UNCONNECTED)
-        set_stream_error(session, StreamError::disconnected);
-    if (session.error.load(std::memory_order_relaxed) != StreamError::none) pw_main_loop_quit(session.loop);
+    if (session.shutting_down.load(std::memory_order_relaxed)) return;
+    const bool failed = state == PW_STREAM_STATE_ERROR
+        ? set_stream_error(session, StreamError::stream_failure, detail)
+        : (state == PW_STREAM_STATE_UNCONNECTED && old_state != PW_STREAM_STATE_UNCONNECTED
+            ? set_stream_error(session, StreamError::disconnected) : false);
+    if (failed) pw_main_loop_quit(session.loop);
 }
 
 void capture_process(void* data) {
@@ -175,31 +179,31 @@ void capture_process(void* data) {
     auto* b = buffer->buffer;
     if (!b || b->n_datas == 0 || !b->datas[0].data || !b->datas[0].chunk ||
         b->datas[0].chunk->stride != static_cast<int>(sizeof(std::int16_t))) {
-        set_stream_error(session, StreamError::unsupported_capture_buffer);
+        const bool failed = set_stream_error(session, StreamError::unsupported_capture_buffer);
         pw_stream_queue_buffer(session.capture, buffer);
-        pw_main_loop_quit(session.loop);
+        if (failed) pw_main_loop_quit(session.loop);
         return;
     }
     auto& d = b->datas[0];
     if (d.chunk->offset > d.maxsize || d.chunk->size > d.maxsize - d.chunk->offset) {
-        set_stream_error(session, StreamError::invalid_capture_range);
+        const bool failed = set_stream_error(session, StreamError::invalid_capture_range);
         pw_stream_queue_buffer(session.capture, buffer);
-        pw_main_loop_quit(session.loop);
+        if (failed) pw_main_loop_quit(session.loop);
         return;
     }
     if ((d.chunk->size % sizeof(std::int16_t)) != 0) {
-        set_stream_error(session, StreamError::unaligned_capture_chunk);
+        const bool failed = set_stream_error(session, StreamError::unaligned_capture_chunk);
         pw_stream_queue_buffer(session.capture, buffer);
-        pw_main_loop_quit(session.loop);
+        if (failed) pw_main_loop_quit(session.loop);
         return;
     }
     const auto count = d.chunk->size / sizeof(std::int16_t);
     const auto* input = reinterpret_cast<const std::int16_t*>(static_cast<const std::byte*>(d.data) + d.chunk->offset);
     // PipeWire callback buffers are bounded; storage is preallocated before streaming.
     if (count > session.callback_output.size()) {
-        set_stream_error(session, StreamError::oversized_capture_buffer);
+        const bool failed = set_stream_error(session, StreamError::oversized_capture_buffer);
         pw_stream_queue_buffer(session.capture, buffer);
-        pw_main_loop_quit(session.loop);
+        if (failed) pw_main_loop_quit(session.loop);
         return;
     }
     const auto process_start = std::chrono::steady_clock::now();
@@ -240,17 +244,17 @@ void source_process(void* data) {
     if (!buffer) return;
     auto* b = buffer->buffer;
     if (!b || b->n_datas == 0 || !b->datas[0].data || !b->datas[0].chunk) {
-        set_stream_error(session, StreamError::unsupported_source_buffer);
+        const bool failed = set_stream_error(session, StreamError::unsupported_source_buffer);
         pw_stream_queue_buffer(session.source, buffer);
-        pw_main_loop_quit(session.loop);
+        if (failed) pw_main_loop_quit(session.loop);
         return;
     }
     auto& d = b->datas[0];
     const auto capacity = d.maxsize / sizeof(std::int16_t);
     if (capacity > session.source_silence.size()) {
-        set_stream_error(session, StreamError::oversized_source_buffer);
+        const bool failed = set_stream_error(session, StreamError::oversized_source_buffer);
         pw_stream_queue_buffer(session.source, buffer);
-        pw_main_loop_quit(session.loop);
+        if (failed) pw_main_loop_quit(session.loop);
         return;
     }
     auto* output = static_cast<std::int16_t*>(d.data);
@@ -270,15 +274,32 @@ struct Runtime {
     pw_context* context{};
     pw_core* core{};
     Session session;
-    ~Runtime() {
+    void shutdown() noexcept {
+        session.shutting_down.store(true, std::memory_order_relaxed);
         spa_hook_remove(&session.capture_listener);
         spa_hook_remove(&session.source_listener);
-        if (session.capture) pw_stream_destroy(session.capture);
-        if (session.source) pw_stream_destroy(session.source);
-        if (core) pw_core_disconnect(core);
-        if (context) pw_context_destroy(context);
-        if (loop) pw_main_loop_destroy(loop);
+        if (session.capture) {
+            pw_stream_destroy(session.capture);
+            session.capture = nullptr;
+        }
+        if (session.source) {
+            pw_stream_destroy(session.source);
+            session.source = nullptr;
+        }
+        if (core) {
+            pw_core_disconnect(core);
+            core = nullptr;
+        }
+        if (context) {
+            pw_context_destroy(context);
+            context = nullptr;
+        }
+        if (loop) {
+            pw_main_loop_destroy(loop);
+            loop = nullptr;
+        }
     }
+    ~Runtime() { shutdown(); }
 };
 
 pw_stream* create_stream(pw_core* core, Session& session, const char* name, pw_properties* properties,
@@ -360,6 +381,7 @@ void run_realtime_microphone(const std::string& device_id, const audio::Processi
     diagnostics_timer = nullptr;
     std::signal(SIGINT, previous_int);
     std::signal(SIGTERM, previous_term);
+    runtime.shutdown(); // Stop PipeWire callbacks before reading their error detail.
     const auto error = runtime.session.error.load(std::memory_order_acquire);
     if (error != StreamError::none)
         throw std::runtime_error(runtime.session.error_detail.data());
