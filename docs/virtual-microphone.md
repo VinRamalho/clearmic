@@ -8,7 +8,7 @@ The Linux CLI can publish a PipeWire source fed by the live processing chain:
 ./build/clearmic-cli serve [pipewire-source-id]
 ```
 
-The command opens the selected microphone (or PipeWire's default source), processes mono 48 kHz PCM16 in the PipeWire capture callback, and publishes the result as **ClearMic Virtual Microphone**. The process must remain running. Ctrl+C stops it. A bounded single-producer/single-consumer queue separates the capture and source callbacks; if the consumer falls behind, old samples are discarded to keep latency bounded. Source disconnection currently stops the service with an error; automatic reconnect and runtime metrics are not implemented.
+The command opens the selected microphone (or PipeWire's default source), processes mono 48 kHz PCM16 in the PipeWire capture callback, and publishes the result as **ClearMic Virtual Microphone**. The process must remain running. Ctrl+C stops it. A bounded single-producer/single-consumer queue separates the capture and source callbacks; if the consumer falls behind, old samples are discarded to keep latency bounded. The service reports processed duration, overruns, and underruns to stderr, and publishes RMS meter values to stdout for the GTK panel. Source disconnection currently stops the service with an error; automatic reconnect is not implemented.
 
 ## Windows
 
