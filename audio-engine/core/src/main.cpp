@@ -8,6 +8,7 @@
 #include <exception>
 #include <cstdint>
 #include <cmath>
+#include <limits>
 #include <string>
 #include <string_view>
 
@@ -69,6 +70,16 @@ void print_usage() {
 #endif
                  ;
 }
+
+std::uint32_t parse_recording_duration(const std::string_view argument) {
+    if (argument.empty() || argument.front() < '0' || argument.front() > '9')
+        throw std::invalid_argument("Recording duration must be an integer from 1 to 30 seconds");
+    std::size_t parsed = 0;
+    const auto value = std::stoul(std::string(argument), &parsed);
+    if (parsed != argument.size() || value == 0 || value > 30 || value > std::numeric_limits<std::uint32_t>::max())
+        throw std::invalid_argument("Recording duration must be an integer from 1 to 30 seconds");
+    return static_cast<std::uint32_t>(value);
+}
 }
 
 int main(const int argc, char** argv) {
@@ -104,7 +115,7 @@ int main(const int argc, char** argv) {
 #if defined(__linux__) || defined(_WIN32)
     if (argc >= 5 && argc <= 14 && std::string_view(argv[1]) == "record-test") {
         try {
-            const auto seconds = static_cast<std::uint32_t>(std::stoul(argv[2]));
+            const auto seconds = parse_recording_duration(argv[2]);
             std::string device_id;
             auto preset = clearmic::audio::Preset::natural;
             auto settings = clearmic::audio::settings_for_preset(preset);
