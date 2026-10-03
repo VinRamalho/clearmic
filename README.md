@@ -232,7 +232,7 @@ ClearMic is designed with the following principles:
 - Detection of underruns and overruns
 - Measurable processing latency
 
-The Windows panel currently shows the selected WASAPI device ID, mix sample rate, and channel count. Buffer size and end-to-end latency are not measured yet. The Linux service reports processed duration and underrun/overrun counters; callback and capture latency instrumentation remains open. ClearMic does not claim fixed measurements such as:
+The Windows panel shows the selected WASAPI device ID, mix sample rate, and channel count; after an A/B capture it also shows the actual capture buffer size, nonzero WASAPI stream latency when reported, and offline DSP wall time for the sample. A missing or zero latency value remains unavailable. Processing wall time is not per-callback processing latency, and end-to-end latency for a Windows virtual-microphone route remains unavailable. The Linux service reports processed duration and underrun/overrun counters; callback and capture latency instrumentation remains open. ClearMic does not claim fixed measurements such as:
 
 ```text
 Sample Rate:        48000 Hz

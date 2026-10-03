@@ -104,7 +104,8 @@ audio::PcmAudio process_for_comparison(audio::PcmAudio original, const audio::Pr
 
 audio::AudioComparison capture_processed_audio(const std::string& device_id,
                                                const std::uint32_t duration_seconds,
-                                               const audio::ProcessingSettings settings) {
+                                               const audio::ProcessingSettings settings,
+                                               CaptureDiagnostics* diagnostics) {
     if (duration_seconds == 0 || duration_seconds > 30)
         throw std::invalid_argument("Capture duration must be between 1 and 30 seconds");
     const auto devices = DeviceManager{}.input_devices();
@@ -151,6 +152,13 @@ audio::AudioComparison capture_processed_audio(const std::string& device_id,
     check_hresult(client->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
                                     buffer_duration, 0, raw_mix_format, nullptr),
                   "Initialize shared Windows microphone capture");
+    if (diagnostics) {
+        UINT32 buffer_frames = 0;
+        if (SUCCEEDED(client->GetBufferSize(&buffer_frames))) diagnostics->buffer_frames = buffer_frames;
+        REFERENCE_TIME stream_latency = 0;
+        if (SUCCEEDED(client->GetStreamLatency(&stream_latency)) && stream_latency > 0)
+            diagnostics->stream_latency_ms = static_cast<double>(stream_latency) / 10000.0;
+    }
     HANDLE capture_event = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     if (!capture_event) throw std::system_error(static_cast<int>(GetLastError()), std::system_category(), "Create microphone capture event");
     struct EventGuard { HANDLE value; ~EventGuard() { if (value) CloseHandle(value); } } event_guard{capture_event};
@@ -215,7 +223,12 @@ audio::AudioComparison capture_processed_audio(const std::string& device_id,
         const auto value = std::lerp(mono_source[source_index], mono_source[next_index], fraction) * 32768.0F;
         original.samples[frame] = static_cast<std::int16_t>(std::lrint(std::clamp(value, -32768.0F, 32767.0F)));
     }
+    const auto processing_start = std::chrono::steady_clock::now();
     auto processed = process_for_comparison(original, settings);
+    if (diagnostics) {
+        diagnostics->processing_wall_time_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - processing_start).count();
+    }
     return audio::AudioComparison{std::move(original), std::move(processed)};
 }
 }

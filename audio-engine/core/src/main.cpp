@@ -8,6 +8,7 @@
 #include <exception>
 #include <cstdint>
 #include <cmath>
+#include <iomanip>
 #include <limits>
 #include <string>
 #include <string_view>
@@ -132,7 +133,8 @@ int main(const int argc, char** argv) {
                 }
             }
 #ifdef _WIN32
-            auto comparison = clearmic::platform::windows::capture_processed_audio(device_id, seconds, settings);
+            clearmic::platform::windows::CaptureDiagnostics diagnostics;
+            auto comparison = clearmic::platform::windows::capture_processed_audio(device_id, seconds, settings, &diagnostics);
 #else
             auto comparison = clearmic::platform::pipewire::capture_processed_audio(device_id, seconds, settings);
 #endif
@@ -144,6 +146,19 @@ int main(const int argc, char** argv) {
             std::cout << "Recorded " << seconds << " seconds from the selected PipeWire microphone.\n"
 #endif
                       << "Original: " << argv[3] << "\nProcessed: " << argv[4] << "\n";
+#ifdef _WIN32
+            if (diagnostics.buffer_frames)
+                std::cout << "WASAPI capture buffer: " << *diagnostics.buffer_frames << " frames\n";
+            if (diagnostics.stream_latency_ms)
+                std::cout << "WASAPI stream latency: " << std::fixed << std::setprecision(1)
+                          << *diagnostics.stream_latency_ms << " ms\n";
+            else
+                std::cout << "WASAPI stream latency: unavailable\n";
+            if (diagnostics.processing_wall_time_ms)
+                std::cout << "A/B DSP compute time for " << seconds << " seconds: " << std::fixed
+                          << std::setprecision(1) << *diagnostics.processing_wall_time_ms << " ms\n";
+            std::cout << std::defaultfloat;
+#endif
         } catch (const std::exception& error) {
             std::cerr << "Could not record microphone test: " << error.what() << "\n";
             return 1;

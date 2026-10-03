@@ -314,13 +314,29 @@ void begin_recording(Application& app) {
                 std::error_code error;
                 std::filesystem::create_directories(directory, error);
                 if (error) throw std::system_error(error, "Create local A/B recording folder");
-                auto comparison = capture_processed_audio(device_id, 5, settings);
+                CaptureDiagnostics diagnostics;
+                auto comparison = capture_processed_audio(device_id, 5, settings, &diagnostics);
                 audio::write_pcm16_wav(app.original_file, comparison.original);
                 audio::write_pcm16_wav(app.processed_file, comparison.processed);
                 completion->input_rms = rms_level(comparison.original);
                 completion->output_rms = rms_level(comparison.processed);
                 completion->success = true;
-                completion->message = L"A/B sample ready. Play the original or processed recording.";
+                completion->message = L"A/B sample ready";
+                if (diagnostics.buffer_frames)
+                    completion->message += L" · WASAPI buffer: " + std::to_wstring(*diagnostics.buffer_frames) + L" frames";
+                if (diagnostics.stream_latency_ms) {
+                    auto latency = std::to_wstring(*diagnostics.stream_latency_ms);
+                    const auto decimal = latency.find(L'.');
+                    if (decimal != std::wstring::npos) latency.resize(decimal + 2);
+                    completion->message += L" · WASAPI stream latency: " + latency + L" ms";
+                } else completion->message += L" · WASAPI stream latency unavailable";
+                if (diagnostics.processing_wall_time_ms) {
+                    auto processing = std::to_wstring(*diagnostics.processing_wall_time_ms);
+                    const auto decimal = processing.find(L'.');
+                    if (decimal != std::wstring::npos) processing.resize(decimal + 2);
+                    completion->message += L" · A/B DSP time for 5 seconds: " + processing + L" ms";
+                }
+                completion->message += L". Use the playback buttons to compare the recordings.";
             } catch (const std::exception& error) {
                 completion->message = to_wide(error.what());
             }
