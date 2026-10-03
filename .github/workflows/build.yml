@@ -117,7 +117,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Linux development dependencies
-        run: sudo apt-get update && sudo apt-get install --yes libpipewire-0.3-dev libgtk-3-dev libgstreamer1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good pkg-config xdotool xvfb
+        run: sudo apt-get update && sudo apt-get install --yes libpipewire-0.3-dev libgtk-3-dev libgstreamer1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good pkg-config python3-xlib xdotool xvfb
       - name: Configure
         run: cmake -S . -B build -G Ninja
       - name: Build
@@ -141,7 +141,8 @@ jobs:
               wait "$app_pid" || true
               exit 1
             fi
-            xdotool windowclose "$window_id"
+            echo "ClearMic window opened: $window_id"
+            /usr/bin/python3 -c "import sys; from Xlib import X, display, protocol; d=display.Display(); w=d.create_resource_object(\"window\", int(sys.argv[1])); atom=d.intern_atom(\"WM_DELETE_WINDOW\"); wm_protocols=d.intern_atom(\"WM_PROTOCOLS\"); assert atom in w.get_wm_protocols(), \"Window does not advertise WM_DELETE_WINDOW\"; event=protocol.event.ClientMessage(window=w, client_type=wm_protocols, data=(32, [atom, X.CurrentTime, 0, 0, 0])); w.send_event(event, event_mask=0, propagate=False); d.flush()" "$window_id"
             wait "$app_pid"
           '
       - name: Build Ubuntu CLI package
