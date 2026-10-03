@@ -31,6 +31,27 @@ int main() {
         parse_device_identifier("0x12xz") || parse_device_identifier("")) return 16;
     AudioDevice device;
     if (device.device_kind != "microphone" || !device.selectable) return 8;
+    std::vector<AudioDevice> available_inputs(3);
+    available_inputs[0].id = "unavailable-function";
+    available_inputs[0].selectable = false;
+    available_inputs[0].is_default = true;
+    available_inputs[1].id = "usb-microphone";
+    available_inputs[2].id = "built-in-microphone";
+    available_inputs[2].is_default = true;
+    const auto preferred_usb = preferred_input_device_index(available_inputs, "usb-microphone");
+    const auto missing_default = preferred_input_device_index(available_inputs, "missing-microphone");
+    const auto unavailable_default = preferred_input_device_index(available_inputs, "unavailable-function");
+    const auto empty_default = preferred_input_device_index(available_inputs, "");
+    if (!preferred_usb || *preferred_usb != 1 || !missing_default || *missing_default != 2 ||
+        !unavailable_default || *unavailable_default != 2 || !empty_default || *empty_default != 2) return 23;
+    available_inputs[2].is_default = false;
+    const auto first_fallback = preferred_input_device_index(available_inputs, "missing-microphone");
+    if (!first_fallback || *first_fallback != 1) return 24;
+    available_inputs[1].selectable = false;
+    const auto unavailable_fallback = preferred_input_device_index(available_inputs, "missing-microphone");
+    const std::vector<AudioDevice> no_inputs;
+    const auto empty_fallback = preferred_input_device_index(no_inputs, "missing-microphone");
+    if (unavailable_fallback.has_value() || empty_fallback.has_value()) return 25;
     if (device.usb_vendor_id || device.usb_product_id) return 17;
     AudioDevice headset_function;
     headset_function.device_kind = "bluetooth-headset-function";

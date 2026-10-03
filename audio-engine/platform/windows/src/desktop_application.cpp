@@ -296,6 +296,18 @@ std::wstring to_wide(const std::string& value) {
     return result;
 }
 
+std::string to_utf8(const std::wstring& value) {
+    if (value.empty()) return {};
+    const int count = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, value.c_str(), -1,
+                                          nullptr, 0, nullptr, nullptr);
+    if (count <= 1) return {};
+    std::string result(static_cast<std::size_t>(count), '\0');
+    WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, value.c_str(), -1,
+                        result.data(), count, nullptr, nullptr);
+    result.pop_back();
+    return result;
+}
+
 void add_control(Application& app, const wchar_t* class_name, const wchar_t* text, DWORD style,
                  int x, int y, int width, int height, const int id = 0, const DWORD extended_style = 0) {
     CreateWindowExW(extended_style, class_name, text, WS_CHILD | WS_VISIBLE | style,
@@ -477,9 +489,7 @@ void refresh_devices(Application& app) {
         app.render_devices.clear();
     }
     SendMessageW(app.microphone, CB_RESETCONTENT, 0, 0);
-    int preferred_row = -1;
-    int default_row = -1;
-    int row = 0;
+    std::vector<std::size_t> eligible_device_indices;
     for (std::size_t index = 0; index < app.devices.size(); ++index) {
         const auto& device = app.devices[index];
         if (!device.selectable || is_virtual_cable_capture(device)) continue;
@@ -489,14 +499,16 @@ void refresh_devices(Application& app) {
                                            reinterpret_cast<LPARAM>(label.c_str()));
         if (added == CB_ERR || added == CB_ERRSPACE) continue;
         SendMessageW(app.microphone, CB_SETITEMDATA, static_cast<WPARAM>(added), static_cast<LPARAM>(index));
-        if (to_wide(device.id) == preferred) preferred_row = row;
-        if (device.is_default) default_row = row;
-        ++row;
+        eligible_device_indices.push_back(index);
     }
-    const int active_row = preferred_row >= 0 ? preferred_row : (default_row >= 0 ? default_row : (row > 0 ? 0 : -1));
+    std::vector<audio::AudioDevice> eligible_devices;
+    eligible_devices.reserve(eligible_device_indices.size());
+    for (const auto index : eligible_device_indices) eligible_devices.push_back(app.devices[index]);
+    const auto selected_device = audio::preferred_input_device_index(eligible_devices, to_utf8(preferred));
+    const int active_row = selected_device ? static_cast<int>(*selected_device) : -1;
     if (active_row >= 0) {
         SendMessageW(app.microphone, CB_SETCURSEL, static_cast<WPARAM>(active_row), 0);
-        if (preferred_row < 0) {
+        if (eligible_devices[static_cast<std::size_t>(active_row)].id != to_utf8(preferred)) {
             const LRESULT index = SendMessageW(app.microphone, CB_GETITEMDATA,
                                                 static_cast<WPARAM>(active_row), 0);
             if (index >= 0 && static_cast<std::size_t>(index) < app.devices.size()) {

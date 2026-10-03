@@ -7,6 +7,21 @@
 namespace clearmic::audio {
 bool is_valid_battery_percentage(const unsigned int percentage) noexcept { return percentage <= 100; }
 
+std::optional<std::size_t> preferred_input_device_index(
+    const std::vector<AudioDevice>& devices, const std::string_view preferred_id) noexcept {
+    std::optional<std::size_t> default_index;
+    std::optional<std::size_t> first_selectable_index;
+    for (std::size_t index = 0; index < devices.size(); ++index) {
+        const auto& device = devices[index];
+        if (!device.selectable) continue;
+        if (!first_selectable_index) first_selectable_index = index;
+        if (!preferred_id.empty() && device.id == preferred_id) return index;
+        if (device.is_default && !default_index) default_index = index;
+    }
+    if (default_index) return default_index;
+    return first_selectable_index;
+}
+
 std::optional<unsigned int> battery_percentage_from_capacity(const std::uint32_t current_capacity,
                                                               const std::uint32_t full_capacity) noexcept {
     constexpr auto unknown = std::numeric_limits<std::uint32_t>::max();

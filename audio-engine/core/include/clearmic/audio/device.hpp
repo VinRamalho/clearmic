@@ -46,6 +46,8 @@ public:
 };
 
 [[nodiscard]] bool is_valid_battery_percentage(unsigned int percentage) noexcept;
+[[nodiscard]] std::optional<std::size_t> preferred_input_device_index(
+    const std::vector<AudioDevice>& devices, std::string_view preferred_id) noexcept;
 [[nodiscard]] std::optional<unsigned int> battery_percentage_from_capacity(
     std::uint32_t current_capacity, std::uint32_t full_capacity) noexcept;
 [[nodiscard]] std::optional<std::uint16_t> parse_device_identifier(std::string_view value) noexcept;

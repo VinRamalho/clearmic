@@ -339,29 +339,24 @@ void refresh_devices(Application& app) {
     }
 
     gtk_combo_box_text_remove_all(GTK_COMBO_BOX_TEXT(app.devices));
-    int preferred_index = -1;
-    int default_index = -1;
+    std::vector<audio::AudioDevice> selectable;
+    selectable.reserve(app.inputs.size());
     for (const auto& device : app.inputs) {
         if (!device.selectable) continue;
-        const auto index = static_cast<int>(gtk_tree_model_iter_n_children(
-            gtk_combo_box_get_model(GTK_COMBO_BOX(app.devices)), nullptr));
+        const auto index = static_cast<int>(selectable.size());
         std::string label = device.name;
         if (device.is_default) label += " (default)";
         gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(app.devices), label.c_str());
-        if (device.id == preferred) preferred_index = index;
-        if (device.is_default) default_index = index;
+        selectable.push_back(device);
     }
 
-    // Keep selectable endpoints in the same order as the GTK list.
-    std::vector<audio::AudioDevice> selectable;
-    std::copy_if(app.inputs.begin(), app.inputs.end(), std::back_inserter(selectable),
-                 [](const auto& device) { return device.selectable; });
     app.inputs = std::move(selectable);
-    const int active = preferred_index >= 0 ? preferred_index
-        : (default_index >= 0 ? default_index : (app.inputs.empty() ? -1 : 0));
+    const auto selected = audio::preferred_input_device_index(app.inputs, preferred);
+    const int active = selected ? static_cast<int>(*selected) : -1;
     if (active >= 0) {
         gtk_combo_box_set_active(GTK_COMBO_BOX(app.devices), active);
-        if (preferred_index < 0) save_device_id(app.inputs[static_cast<std::size_t>(active)].id);
+        if (app.inputs[static_cast<std::size_t>(active)].id != preferred)
+            save_device_id(app.inputs[static_cast<std::size_t>(active)].id);
     } else {
         gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(app.devices),
             enumeration_error.empty() ? "No microphone detected" : "PipeWire unavailable");
