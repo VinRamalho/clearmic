@@ -11,6 +11,7 @@
 #include <atomic>
 #include <csignal>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <iostream>
 #include <span>
@@ -66,6 +67,8 @@ struct Session {
     std::atomic<std::uint64_t> capture_overruns{};
     std::atomic<std::uint64_t> source_underruns{};
     std::atomic<std::uint64_t> processed_samples{};
+    std::atomic<float> input_rms{};
+    std::atomic<float> output_rms{};
     pw_stream* capture{};
     pw_stream* source{};
     spa_hook capture_listener{};
@@ -86,6 +89,9 @@ void on_diagnostics_timer(void* data, std::uint64_t) {
     const auto processed = session.processed_samples.load(std::memory_order_relaxed);
     const auto overruns = session.capture_overruns.load(std::memory_order_relaxed);
     const auto underruns = session.source_underruns.load(std::memory_order_relaxed);
+    const auto input_level = session.input_rms.load(std::memory_order_relaxed);
+    const auto output_level = session.output_rms.load(std::memory_order_relaxed);
+    std::cout << "METER " << input_level << ' ' << output_level << '\n' << std::flush;
     if (processed != diagnostics.last_processed || overruns != 0 || underruns != 0) {
         std::clog << "ClearMic metrics: processed=" << processed / 48000 << "s"
                   << " capture_overruns=" << overruns << " source_underruns=" << underruns << '\n';
@@ -146,6 +152,18 @@ void capture_process(void* data) {
         return;
     }
     session.processor.process(std::span<const std::int16_t>(input, count), std::span<std::int16_t>(session.callback_output).first(count));
+    double input_square_sum = 0.0;
+    double output_square_sum = 0.0;
+    for (std::size_t index = 0; index < count; ++index) {
+        const double before = static_cast<double>(input[index]) / 32768.0;
+        const double after = static_cast<double>(session.callback_output[index]) / 32768.0;
+        input_square_sum += before * before;
+        output_square_sum += after * after;
+    }
+    if (count != 0) {
+        session.input_rms.store(static_cast<float>(std::sqrt(input_square_sum / count)), std::memory_order_relaxed);
+        session.output_rms.store(static_cast<float>(std::sqrt(output_square_sum / count)), std::memory_order_relaxed);
+    }
     if (session.ring.push(session.callback_output.data(), count))
         session.capture_overruns.fetch_add(1, std::memory_order_relaxed);
     session.processed_samples.fetch_add(count, std::memory_order_relaxed);
@@ -267,8 +285,8 @@ void run_realtime_microphone(const std::string& device_id, const audio::Preset p
     Diagnostics diagnostics{&runtime.session};
     diagnostics_timer = pw_loop_add_timer(loop, on_diagnostics_timer, &diagnostics);
     if (!signal_event || !diagnostics_timer) throw std::runtime_error("Could not initialize PipeWire service diagnostics");
-    timespec first_fire{5, 0};
-    timespec repeat{5, 0};
+    timespec first_fire{1, 0};
+    timespec repeat{1, 0};
     pw_loop_update_timer(loop, diagnostics_timer, &first_fire, &repeat, false);
     pw_main_loop_run(runtime.loop);
     pending_signal_loop.store(nullptr, std::memory_order_relaxed);

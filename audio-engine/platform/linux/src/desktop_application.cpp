@@ -3,6 +3,7 @@
 #include <gtk/gtk.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <iterator>
 #include <signal.h>
 #include <string>
@@ -17,11 +18,15 @@ struct Application {
     GtkWidget* preset{};
     GtkWidget* device_status{};
     GtkWidget* service_status{};
+    GtkWidget* input_meter{};
+    GtkWidget* output_meter{};
     GtkWidget* start_button{};
     GtkWidget* stop_button{};
     GtkWidget* refresh_button{};
     std::vector<audio::AudioDevice> inputs;
     GSubprocess* service{};
+    GDataInputStream* service_output{};
+    GCancellable* output_cancel{};
 };
 
 std::string settings_path() {
@@ -171,6 +176,34 @@ void on_preset_changed(GtkComboBox* combo, gpointer) {
 
 void on_refresh(GtkButton*, gpointer data) { refresh_devices(*static_cast<Application*>(data)); }
 
+void read_service_output(GObject* source, GAsyncResult* result, gpointer user_data) {
+    auto& app = *static_cast<Application*>(user_data);
+    GError* error = nullptr;
+    gsize length = 0;
+    gchar* line = g_data_input_stream_read_line_finish(G_DATA_INPUT_STREAM(source), result, &length, &error);
+    if (line && app.service) {
+        float input = 0.0F;
+        float output = 0.0F;
+        if (std::sscanf(line, "METER %f %f", &input, &output) == 2) {
+            input = std::clamp(input, 0.0F, 1.0F);
+            output = std::clamp(output, 0.0F, 1.0F);
+            gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(app.input_meter), input);
+            gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(app.output_meter), output);
+            char text[32];
+            std::snprintf(text, sizeof(text), "Input %.0f%%", input * 100.0F);
+            gtk_progress_bar_set_text(GTK_PROGRESS_BAR(app.input_meter), text);
+            std::snprintf(text, sizeof(text), "Processed %.0f%%", output * 100.0F);
+            gtk_progress_bar_set_text(GTK_PROGRESS_BAR(app.output_meter), text);
+        }
+        g_free(line);
+        g_data_input_stream_read_line_async(app.service_output, G_PRIORITY_DEFAULT, app.output_cancel,
+                                            read_service_output, &app);
+        return;
+    }
+    g_free(line);
+    if (error) g_error_free(error);
+}
+
 void on_start(GtkButton*, gpointer data) {
     auto& app = *static_cast<Application*>(data);
     const int index = selected_index(app);
@@ -179,7 +212,7 @@ void on_start(GtkButton*, gpointer data) {
     const int preset_index = std::clamp(gtk_combo_box_get_active(GTK_COMBO_BOX(app.preset)), 0, 2);
     const char* presets[] = {"natural", "meeting", "strong"};
     GError* error = nullptr;
-    app.service = g_subprocess_new(static_cast<GSubprocessFlags>(G_SUBPROCESS_FLAGS_STDOUT_SILENCE), &error,
+    app.service = g_subprocess_new(static_cast<GSubprocessFlags>(G_SUBPROCESS_FLAGS_STDOUT_PIPE), &error,
                                    app.executable, "serve", id.c_str(), presets[preset_index], nullptr);
     if (!app.service) {
         gtk_label_set_text(GTK_LABEL(app.service_status), error ? error->message : "Could not start audio service.");
@@ -189,6 +222,11 @@ void on_start(GtkButton*, gpointer data) {
     gtk_label_set_text(GTK_LABEL(app.service_status), "Starting ClearMic virtual microphone…");
     gtk_widget_set_sensitive(app.devices, FALSE);
     update_controls(app);
+    app.service_output = g_data_input_stream_new(g_subprocess_get_stdout_pipe(app.service));
+    app.output_cancel = g_cancellable_new();
+    gtk_label_set_text(GTK_LABEL(app.service_status), "ClearMic is processing locally. Select its virtual microphone in your audio application.");
+    g_data_input_stream_read_line_async(app.service_output, G_PRIORITY_DEFAULT, app.output_cancel,
+                                        read_service_output, &app);
     g_subprocess_wait_check_async(app.service, nullptr,
         [](GObject* source, GAsyncResult* result, gpointer user_data) {
             auto& state = *static_cast<Application*>(user_data);
@@ -199,6 +237,9 @@ void on_start(GtkButton*, gpointer data) {
             } else {
                 gtk_label_set_text(GTK_LABEL(state.service_status), "Audio service stopped.");
             }
+            if (state.output_cancel) g_cancellable_cancel(state.output_cancel);
+            g_clear_object(&state.service_output);
+            g_clear_object(&state.output_cancel);
             g_clear_object(&state.service);
             gtk_widget_set_sensitive(state.devices, TRUE);
             refresh_devices(state);
@@ -215,9 +256,12 @@ void on_stop(GtkButton*, gpointer data) {
 void on_window_destroy(GtkWidget*, gpointer data) {
     auto& app = *static_cast<Application*>(data);
     if (app.service) {
+        if (app.output_cancel) g_cancellable_cancel(app.output_cancel);
         g_subprocess_send_signal(app.service, SIGTERM);
         g_subprocess_wait(app.service, nullptr, nullptr);
     }
+    g_clear_object(&app.service_output);
+    g_clear_object(&app.output_cancel);
     g_clear_object(&app.service);
 }
 
@@ -266,6 +310,14 @@ int run_desktop_application(const char* executable_path) {
     app.service_status = make_label("Audio processing is off.");
     gtk_label_set_line_wrap(GTK_LABEL(app.service_status), TRUE);
     gtk_box_pack_start(GTK_BOX(layout), app.service_status, FALSE, FALSE, 4);
+    app.input_meter = gtk_progress_bar_new();
+    gtk_progress_bar_set_show_text(GTK_PROGRESS_BAR(app.input_meter), TRUE);
+    gtk_progress_bar_set_text(GTK_PROGRESS_BAR(app.input_meter), "Input");
+    gtk_box_pack_start(GTK_BOX(layout), app.input_meter, FALSE, FALSE, 0);
+    app.output_meter = gtk_progress_bar_new();
+    gtk_progress_bar_set_show_text(GTK_PROGRESS_BAR(app.output_meter), TRUE);
+    gtk_progress_bar_set_text(GTK_PROGRESS_BAR(app.output_meter), "Processed output");
+    gtk_box_pack_start(GTK_BOX(layout), app.output_meter, FALSE, FALSE, 0);
 
     auto* service_buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     app.start_button = gtk_button_new_with_label("Start enhancement");
