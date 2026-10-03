@@ -1,16 +1,13 @@
 #include "clearmic/audio/device.hpp"
 
-#include <cassert>
 #include <optional>
 
 int main() {
     using namespace clearmic::audio;
-    assert(is_valid_battery_percentage(0));
-    assert(is_valid_battery_percentage(100));
-    assert(!is_valid_battery_percentage(101));
+    if (!is_valid_battery_percentage(0) || !is_valid_battery_percentage(100) || is_valid_battery_percentage(101)) return 1;
     AudioDevice device;
-    assert(device.capabilities.battery == std::nullopt);
-    assert(device.capabilities.transmitter_battery == std::nullopt);
-    assert(device.capabilities.receiver_battery == std::nullopt);
+    if (device.capabilities.battery != std::nullopt) return 2;
+    if (device.capabilities.transmitter_battery != std::nullopt) return 3;
+    if (device.capabilities.receiver_battery != std::nullopt) return 4;
     return 0;
 }
