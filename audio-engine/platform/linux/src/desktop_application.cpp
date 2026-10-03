@@ -54,6 +54,7 @@ struct Application {
     std::string original_path;
     std::string processed_path;
     std::string active_device_id;
+    std::string device_error;
     bool refreshing_devices{};
     bool updating_preferences{};
     bool reconnect_enabled{};
@@ -220,7 +221,10 @@ int selected_index(const Application& app) {
 void update_device_status(Application& app) {
     const int index = selected_index(app);
     if (index < 0 || static_cast<std::size_t>(index) >= app.inputs.size()) {
-        gtk_label_set_text(GTK_LABEL(app.device_status), "No PipeWire microphone source is available.");
+        const std::string status = app.device_error.empty()
+            ? "No microphone detected. Connect or enable a microphone, check that PipeWire and WirePlumber are running, then select Refresh devices."
+            : app.device_error + ". Check that PipeWire and WirePlumber are running, then select Refresh devices.";
+        gtk_label_set_text(GTK_LABEL(app.device_status), status.c_str());
         return;
     }
     const auto& selected = app.inputs[static_cast<std::size_t>(index)];
@@ -275,11 +279,14 @@ void update_controls(Application& app) {
 void refresh_devices(Application& app) {
     app.refreshing_devices = true;
     const auto preferred = stored_device_id();
+    app.device_error.clear();
+    std::string enumeration_error;
     try {
         app.inputs = DeviceManager{}.input_devices();
     } catch (const std::exception& error) {
         app.inputs.clear();
-        gtk_label_set_text(GTK_LABEL(app.device_status), error.what());
+        enumeration_error = error.what();
+        app.device_error = enumeration_error;
     }
 
     gtk_combo_box_text_remove_all(GTK_COMBO_BOX_TEXT(app.devices));
@@ -306,6 +313,10 @@ void refresh_devices(Application& app) {
     if (active >= 0) {
         gtk_combo_box_set_active(GTK_COMBO_BOX(app.devices), active);
         if (preferred_index < 0) save_device_id(app.inputs[static_cast<std::size_t>(active)].id);
+    } else {
+        gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(app.devices),
+            enumeration_error.empty() ? "No microphone detected" : "PipeWire unavailable");
+        gtk_combo_box_set_active(GTK_COMBO_BOX(app.devices), 0);
     }
     update_device_status(app);
     update_controls(app);
