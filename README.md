@@ -6,9 +6,9 @@ ClearMic is an open-source, cross-platform desktop application designed to impro
 
 > **Development status:** the C++20 device model, Windows WASAPI and Linux PipeWire input backends, shared stateful DSP chain, and CI builds for Windows and Ubuntu 24.04 are in place. Both platforms provide CLI `record-test` A/B capture. Linux has a GTK desktop panel to discover/select a PipeWire microphone, save the selection and processing options, start/stop the processed `ClearMic Virtual Microphone` service, record/play a five-second A/B comparison using the selected preset and controls, refresh microphone availability automatically while idle, retry the service after unexpected failures, and optionally keep running in the system tray. When streaming, the Linux panel shows live input and processed RMS meters. It exposes a master enhancement switch, noise suppression, noise gate, automatic gain, compressor, and input gain controls. Linux also reads a Bluetooth battery percentage from BlueZ when PipeWire supplies a matching Bluetooth address and BlueZ reports the value. Windows has a native desktop panel for WASAPI endpoint discovery, persistent processing controls, five-second A/B capture, and in-app playback. Windows real-time virtual-microphone routing, Windows and USB receiver battery telemetry, a verified installer, and native audio-quality validation remain incomplete. The Ubuntu `.deb` includes the GUI. This is an early development project, not a finished product.
 
-It aims to reduce background noise, echo, room reverberation, and inconsistent microphone levels while preserving a natural-sounding voice.
+It currently targets background noise and inconsistent microphone levels while preserving a natural-sounding voice. Acoustic echo cancellation and room reverberation reduction are not implemented.
 
-The long-term goal is simple:
+The product goal is simple:
 
 > Turn any microphone into a cleaner, enhanced virtual microphone that can be used by any application.
 
@@ -30,7 +30,7 @@ Common issues include:
 - Aggressive or poor-quality built-in processing
 - Bluetooth headset microphone limitations
 
-ClearMic provides a local processing layer between the physical microphone and applications.
+ClearMic provides a local processing layer between the physical microphone and applications. Today, the continuous virtual-microphone route is implemented on Linux through PipeWire. Windows supports device selection and explicit A/B capture/playback; its continuous virtual-microphone route is still under development.
 
 ```text
 Physical Microphone
@@ -40,8 +40,7 @@ Physical Microphone
 │        ClearMic         │
 │                         │
 │   Noise Suppression     │
-│   Echo Reduction        │
-│   Reverb Reduction      │
+│   Input Gain            │
 │   Noise Gate            │
 │   Compressor            │
 │   Automatic Gain        │
@@ -55,22 +54,23 @@ Physical Microphone
    Discord  Meet   Teams   Zoom
 ```
 
-The processed microphone can eventually be selected like any other microphone in voice applications, browsers, games, recording software, and communication tools.
+On Linux, the processed microphone can be selected like any other PipeWire source in voice applications, browsers, games, recording software, and communication tools while ClearMic is running.
 
 ---
 
-## ✨ Planned Features
+## ✨ Capabilities and planned work
 
 ### Audio enhancement
 
-- Real-time noise suppression
-- Echo reduction
-- Room reverberation reduction
-- Automatic gain control
-- Noise gate
-- Dynamic range compression
-- Voice activity detection
-- Configurable processing pipeline
+- [x] Linux real-time noise suppression
+- [ ] Windows real-time noise suppression
+- [ ] Acoustic echo cancellation (requires synchronized playback reference)
+- [ ] Room reverberation reduction
+- [x] Automatic gain control
+- [x] Noise gate
+- [x] Dynamic range compression
+- [ ] Voice activity detection
+- [x] Configurable processing pipeline and presets
 
 ### Microphone management
 
@@ -83,7 +83,7 @@ The processed microphone can eventually be selected like any other microphone in
 
 ### A/B microphone testing
 
-ClearMic will provide an easy way to compare the microphone before and after processing.
+ClearMic provides an explicit way to compare the microphone before and after processing.
 
 ```text
 Original microphone
@@ -96,17 +96,19 @@ Original microphone
         └──► processed.wav
 ```
 
-This makes it possible to objectively evaluate whether a processing configuration actually improves voice quality.
+The desktop panels record five-second A/B samples using the selected profile and controls, then play either recording locally. Listening with real hardware is still needed to evaluate voice quality.
 
 ### Virtual microphone
 
-The long-term goal is to expose processed audio as:
+The Linux service exposes processed audio as:
 
 ```text
 ClearMic Virtual Microphone
 ```
 
-Applications such as Discord, Microsoft Teams, Google Meet, Zoom, OBS, browsers, games, and other voice applications will be able to use it as a regular microphone.
+On Linux, applications such as Discord, Microsoft Teams, Google Meet, Zoom, OBS, browsers, games, and other voice applications can select the PipeWire source while the ClearMic service is running. Windows application routing remains future work.
+
+Echo cancellation requires a playback reference, and reverberation reduction is not implemented yet. The current live chain provides RNNoise suppression, input gain, gate, compressor, and automatic gain control; it does not claim to remove acoustic echo or room reverberation.
 
 ---
 
@@ -116,8 +118,8 @@ ClearMic targets:
 
 | Platform | Audio Backend | Status |
 | --- | --- | --- |
-| Ubuntu / Linux | PipeWire | 🚧 Desktop panel, device monitoring, presets/controls, A/B capture/playback, live service, and virtual source; native hardware quality validation pending |
-| Windows 11 | WASAPI | 🚧 Native desktop panel, device monitoring, saved DSP controls, A/B capture/playback; continuous virtual microphone pending |
+| Ubuntu / Linux | PipeWire | 🚧 GTK desktop panel, device monitoring, presets/controls, A/B capture/playback, live service, and virtual source; native hardware quality validation pending |
+| Windows 11 | WASAPI | 🚧 Native desktop panel, device monitoring, saved DSP controls, A/B capture/playback; continuous virtual microphone and verified installer pending |
 
 Additional Linux distributions using PipeWire may work in the future.
 
@@ -169,13 +171,11 @@ Platform-specific implementations are isolated behind common interfaces.
 
 ClearMic is being designed around proven audio-processing techniques rather than proprietary cloud processing.
 
-The current offline processor uses:
+The current processor uses RNNoise for noise suppression. The stateful chain also provides input gain, a noise gate, compression, and RMS-based automatic gain control.
 
-- RNNoise
+The Linux live pipeline uses the shared stateful processor chain. Windows currently processes captured A/B samples after recording; it does not yet run a continuous stream into a virtual endpoint. WebRTC Audio Processing Module has not been integrated.
 
-WebRTC Audio Processing Module has not been integrated. A live processing pipeline and configurable processors remain future work.
-
-A possible pipeline looks like:
+The Linux live pipeline is:
 
 ```text
 Audio Capture
@@ -184,10 +184,7 @@ Audio Capture
 Noise Suppression
      │
      ▼
-Echo / Reverb Processing
-     │
-     ▼
-Noise Gate
+Input Gain and Noise Gate
      │
      ▼
 Compressor
@@ -287,7 +284,7 @@ The current architecture targets:
 
 ### Desktop UI
 
-The desktop UI framework has not been selected. The project will choose a lightweight cross-platform approach after the audio service and virtual-microphone architecture are established.
+Linux uses a GTK 3 desktop panel and Windows uses a native Win32 panel. Windows continuous virtual-microphone routing remains under development.
 
 ## 📚 Developer documentation
 
@@ -326,10 +323,9 @@ clearmic/
 │
 ├── CMakeLists.txt
 ├── README.md
-└── LICENSE
 ```
 
-The structure may change as the architecture evolves.
+The project structure continues to evolve with the implementation.
 
 ---
 
@@ -385,7 +381,7 @@ On Linux, run the continuous processor and expose its output to desktop applicat
 ./build/clearmic-cli serve [pipewire-source-id]
 ```
 
-Omit the optional source ID to use PipeWire's default microphone. Keep the process running while selecting **ClearMic Virtual Microphone** in the target application; press Ctrl+C to stop. Device reconnect and desktop controls are still in progress.
+Omit the optional source ID to use PipeWire's default microphone. Keep the process running while selecting **ClearMic Virtual Microphone** in the target application; press Ctrl+C to stop. The Linux desktop panel can manage the service, select a device, and adjust processing controls; see [Virtual microphone](docs/virtual-microphone.md) for details.
 
 Offline noise suppression for an existing WAV file:
 
@@ -429,7 +425,7 @@ The eventual goal is to distribute ClearMic as a normal desktop application.
 
 ### Windows
 
-The Windows workflow is configured to build a CPack/WiX MSI with the desktop and CLI executables, then check installation, launch, and removal. A distributable release remains pending CI validation, the project license, and the Windows virtual-microphone strategy.
+The Windows workflow builds a CPack/WiX MSI containing the desktop and CLI executables. The workflow builds and tests the binaries, but its MSI install/remove lifecycle check fails and requires diagnosis before the installer can be considered verified. A public release also needs a project license and a Windows virtual-microphone strategy.
 
 ### Ubuntu
 
@@ -443,7 +439,7 @@ Install with:
 sudo apt install ./clearmic_<version>_amd64.deb
 ```
 
-Build the Ubuntu `.deb` from an Ubuntu 24.04 environment using `packaging/linux/build-deb.sh`. The package includes `clearmic-cli`, the GTK control panel, a man page, and a desktop launcher. The GUI can start/stop real-time routing and select the **ClearMic Virtual Microphone** in other apps. Install `libgtk-3-dev` to build from source; end users receive GTK runtime dependencies through the package.
+Build the Ubuntu `.deb` from an Ubuntu 24.04 environment using `packaging/linux/build-deb.sh`. The package includes `clearmic-cli`, the GTK control panel, a man page, and a desktop launcher. The GUI can start/stop real-time routing and select the **ClearMic Virtual Microphone** in other apps. Install `libpipewire-0.3-dev`, `libgtk-3-dev`, and `libgstreamer1.0-dev` to build from source; end users receive GTK and GStreamer runtime dependencies through the package.
 
 ---
 
@@ -465,7 +461,7 @@ Build the Ubuntu `.deb` from an Ubuntu 24.04 environment using `packaging/linux/
 - [x] Bounded microphone capture for explicit CLI A/B tests (PipeWire and WASAPI)
 - [x] PCM WAV recording
 - [x] Original vs. processed recording files
-- [ ] Basic audio diagnostics
+- [x] Basic audio diagnostics (processed duration and Linux service underrun/overrun counters)
 
 ### Phase 3 — Audio Processing
 
@@ -492,19 +488,19 @@ Build the Ubuntu `.deb` from an Ubuntu 24.04 environment using `packaging/linux/
 
 ### Phase 6 — Desktop Application
 
-- [ ] Desktop UI
-- [ ] Device selector
-- [ ] Input/output level meters
-- [ ] Processing controls
-- [ ] Audio profiles
-- [ ] A/B recording test
+- [x] Desktop UI (GTK on Linux and native Win32 on Windows)
+- [x] Device selector
+- [x] Input/output level meters (Linux live stream and last A/B sample on Windows)
+- [x] Processing controls
+- [x] Audio profiles
+- [x] A/B recording test
 
 ### Phase 7 — Distribution
 
 - [ ] Windows installer
 - [x] Ubuntu command-line `.deb`
-- [ ] GitHub Actions builds
-- [ ] Automated tests
+- [x] GitHub Actions builds (Windows and Ubuntu; MSI lifecycle check still fails)
+- [x] Automated tests (core and CLI validation; see CI for platform coverage)
 - [ ] Release pipeline
 
 ---
@@ -527,8 +523,7 @@ Build the Ubuntu `.deb` from an Ubuntu 24.04 environment using `packaging/linux/
 │ Noise Suppression                       │
 │ Low ───────────●──────────── High        │
 │                                          │
-│ Echo Reduction                   [ ON ]  │
-│ Reverb Reduction                 [ ON ]  │
+│ Compressor                       [ ON ]  │
 │ Automatic Gain                   [ ON ]  │
 │ Noise Gate                       [ ON ]  │
 │                                          │
