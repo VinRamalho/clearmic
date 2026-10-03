@@ -73,9 +73,34 @@ struct Session {
     std::string error;
 };
 
-std::atomic<pw_main_loop*> active_loop{};
+std::atomic<spa_source*> pending_signal_event{};
+std::atomic<pw_main_loop*> pending_signal_loop{};
+struct Diagnostics {
+    Session* session{};
+    std::uint64_t last_processed{};
+};
+spa_source* diagnostics_timer{};
+void on_diagnostics_timer(void* data, std::uint64_t) {
+    auto& diagnostics = *static_cast<Diagnostics*>(data);
+    auto& session = *diagnostics.session;
+    const auto processed = session.processed_samples.load(std::memory_order_relaxed);
+    const auto overruns = session.capture_overruns.load(std::memory_order_relaxed);
+    const auto underruns = session.source_underruns.load(std::memory_order_relaxed);
+    if (processed != diagnostics.last_processed || overruns != 0 || underruns != 0) {
+        std::clog << "ClearMic metrics: processed=" << processed / 48000 << "s"
+                  << " capture_overruns=" << overruns << " source_underruns=" << underruns << '\n';
+        diagnostics.last_processed = processed;
+    }
+}
+
 void handle_signal(int) {
-    if (auto* loop = active_loop.load(std::memory_order_relaxed)) pw_main_loop_quit(loop);
+    auto* loop = pending_signal_loop.load(std::memory_order_relaxed);
+    auto* event = pending_signal_event.load(std::memory_order_relaxed);
+    if (loop && event) pw_loop_signal_event(pw_main_loop_get_loop(loop), event);
+}
+
+void on_signal_event(void* data, std::uint64_t) {
+    pw_main_loop_quit(static_cast<pw_main_loop*>(data));
 }
 
 void state_changed(void* data, pw_stream_state old_state, pw_stream_state state, const char* error) {
@@ -99,13 +124,19 @@ void capture_process(void* data) {
         return;
     }
     auto& d = b->datas[0];
-    const auto count = d.chunk->size / sizeof(std::int16_t);
     if (d.chunk->offset > d.maxsize || d.chunk->size > d.maxsize - d.chunk->offset) {
         session.error = "PipeWire capture buffer reported an invalid chunk range";
         pw_stream_queue_buffer(session.capture, buffer);
         pw_main_loop_quit(session.loop);
         return;
     }
+    if ((d.chunk->size % sizeof(std::int16_t)) != 0) {
+        session.error = "PipeWire capture chunk is not aligned to PCM16 samples";
+        pw_stream_queue_buffer(session.capture, buffer);
+        pw_main_loop_quit(session.loop);
+        return;
+    }
+    const auto count = d.chunk->size / sizeof(std::int16_t);
     const auto* input = reinterpret_cast<const std::int16_t*>(static_cast<const std::byte*>(d.data) + d.chunk->offset);
     // PipeWire callback buffers are bounded; storage is preallocated before streaming.
     if (count > session.callback_output.size()) {
@@ -185,10 +216,9 @@ void connect_audio(pw_stream* stream, const pw_direction direction, const char* 
     spa_pod_builder builder = SPA_POD_BUILDER_INIT(storage.data(), storage.size());
     const spa_pod* params[] = {spa_format_audio_raw_build(&builder, SPA_PARAM_EnumFormat, &format)};
     const auto flags = static_cast<pw_stream_flags>(PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_MAP_BUFFERS | PW_STREAM_FLAG_RT_PROCESS);
-    std::uint32_t target_id = PW_ID_ANY;
     if (target && pw_properties_set(const_cast<pw_properties*>(pw_stream_get_properties(stream)), PW_KEY_TARGET_OBJECT, target) < 0)
         throw std::runtime_error("Could not set the selected PipeWire microphone target");
-    const auto result = pw_stream_connect(stream, direction, target_id, flags, params, 1);
+    const auto result = pw_stream_connect(stream, direction, PW_ID_ANY, flags, params, 1);
     if (result < 0) throw std::runtime_error("Could not connect a ClearMic PipeWire audio stream");
 }
 }
@@ -229,23 +259,22 @@ void run_realtime_microphone(const std::string& device_id) {
 
     const auto previous_int = std::signal(SIGINT, handle_signal);
     const auto previous_term = std::signal(SIGTERM, handle_signal);
-    active_loop.store(runtime.loop, std::memory_order_relaxed);
-    std::jthread diagnostics([&](std::stop_token stop) {
-        std::uint64_t last_processed = 0;
-        while (!stop.stop_requested()) {
-            std::this_thread::sleep_for(std::chrono::seconds(5));
-            const auto processed = runtime.session.processed_samples.load(std::memory_order_relaxed);
-            const auto overruns = runtime.session.capture_overruns.load(std::memory_order_relaxed);
-            const auto underruns = runtime.session.source_underruns.load(std::memory_order_relaxed);
-            if (processed == last_processed && overruns == 0 && underruns == 0) continue;
-            std::clog << "ClearMic metrics: processed=" << processed / 48000 << "s"
-                      << " capture_overruns=" << overruns << " source_underruns=" << underruns << '\n';
-            last_processed = processed;
-        }
-    });
+    const auto loop = pw_main_loop_get_loop(runtime.loop);
+    auto* signal_event = pw_loop_add_event(loop, on_signal_event, runtime.loop);
+    pending_signal_loop.store(runtime.loop, std::memory_order_relaxed);
+    pending_signal_event.store(signal_event, std::memory_order_relaxed);
+    Diagnostics diagnostics{&runtime.session};
+    diagnostics_timer = pw_loop_add_timer(loop, on_diagnostics_timer, &diagnostics);
+    if (!signal_event || !diagnostics_timer) throw std::runtime_error("Could not initialize PipeWire service diagnostics");
+    timespec first_fire{5, 0};
+    timespec repeat{5, 0};
+    pw_loop_update_timer(loop, diagnostics_timer, &first_fire, &repeat, false);
     pw_main_loop_run(runtime.loop);
-    diagnostics.request_stop();
-    active_loop.store(nullptr, std::memory_order_relaxed);
+    pending_signal_loop.store(nullptr, std::memory_order_relaxed);
+    pending_signal_event.store(nullptr, std::memory_order_relaxed);
+    pw_loop_destroy_source(loop, signal_event);
+    pw_loop_destroy_source(loop, diagnostics_timer);
+    diagnostics_timer = nullptr;
     std::signal(SIGINT, previous_int);
     std::signal(SIGTERM, previous_term);
     if (!runtime.session.error.empty()) throw std::runtime_error(runtime.session.error);
