@@ -128,8 +128,12 @@ jobs:
         run: |
           set -o pipefail
           set +e
-          bash -x tests/linux/pipewire_virtual_source_e2e.sh build/clearmic-cli 2>&1 | tee pipewire-route-test.log
+          bash -x tests/linux/pipewire_virtual_source_e2e.sh build/clearmic-cli build/clearmic-pipewire-test-source off 2>&1 | tee pipewire-route-test.log
           test_status=${PIPESTATUS[0]}
+          if [ "$test_status" -eq 0 ]; then
+            bash -x tests/linux/pipewire_virtual_source_e2e.sh build/clearmic-cli build/clearmic-pipewire-test-source on 2>&1 | tee -a pipewire-route-test.log
+            test_status=${PIPESTATUS[0]}
+          fi
           set -e
           if [ "$test_status" -ne 0 ]; then
             {

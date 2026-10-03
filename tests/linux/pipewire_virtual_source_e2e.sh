@@ -4,11 +4,29 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cli_path=${1:-"$repo_root/build/clearmic-cli"}
 if [[ "$cli_path" != /* ]]; then cli_path="$repo_root/$cli_path"; fi
+source_path=${2:-"$repo_root/build/clearmic-pipewire-test-source"}
+if [[ "$source_path" != /* ]]; then source_path="$repo_root/$source_path"; fi
+noise_suppression=${3:-off}
+service_seconds=${CLEARMIC_E2E_SERVICE_SECONDS:-6}
+consumer_seconds=${CLEARMIC_E2E_CONSUMER_SECONDS:-3}
+if [[ "$noise_suppression" != on && "$noise_suppression" != off ]]; then
+    echo "Noise suppression mode must be 'on' or 'off'" >&2
+    exit 2
+fi
+if [[ ! "$service_seconds" =~ ^[1-9][0-9]*$ || ! "$consumer_seconds" =~ ^[1-9][0-9]*$ ||
+      "$service_seconds" -le "$consumer_seconds" ]]; then
+    echo "The positive service duration must exceed the positive consumer duration" >&2
+    exit 2
+fi
 if [[ ! -x "$cli_path" ]]; then
     echo "ClearMic CLI executable not found: $cli_path" >&2
     exit 2
 fi
-for command in pipewire wireplumber pw-cli pw-cat timeout python3 dbus-run-session; do
+if [[ ! -x "$source_path" ]]; then
+    echo "PipeWire test source executable not found: $source_path" >&2
+    exit 2
+fi
+for command in pipewire wireplumber pw-cli pw-cat timeout setsid python3 dbus-run-session; do
     if ! command -v "$command" >/dev/null; then
         echo "PipeWire integration test requires '$command'" >&2
         exit 2
@@ -28,17 +46,8 @@ import sys
 config_path = sys.argv[1]
 with open(config_path, encoding="utf-8") as config_file:
     config = config_file.read()
-needle = "    audio.convert.* = audioconvert/libspa-audioconvert"
-if needle not in config:
-    raise SystemExit("PipeWire minimal.conf does not contain the expected SPA library section")
-config = config.replace(
-    needle,
-    "    audiotestsrc    = audiotestsrc/libspa-audiotestsrc\n" + needle,
-    1,
-)
 config += '''
 context.objects = [
-  { factory = adapter args = { factory.name = audiotestsrc node.name = clearmic_e2e_source node.description = "ClearMic E2E Test Source" media.class = Audio/Source audio.channels = 1 audio.position = [ MONO ] node.param.Props = { live = true } } }
   { factory = spa-node-factory args = { factory.name = support.node.driver node.name = ClearMic-E2E-Dummy-Driver node.group = pipewire.dummy priority.driver = 20000 node.always-process = true } }
 ]
 '''
@@ -54,17 +63,34 @@ pipewire -c "$tmp/pipewire.conf" >"$tmp/pipewire.log" 2>&1 &
 pipewire_pid=$!
 dbus-run-session -- wireplumber >"$tmp/wireplumber.log" 2>&1 &
 wireplumber_pid=$!
+pipewire_ready=false
+for _ in $(seq 1 50); do
+    if pw-cli ls Node >/dev/null 2>&1; then
+        pipewire_ready=true
+        break
+    fi
+    sleep 0.1
+done
+if [[ "$pipewire_ready" != true ]]; then
+    cat "$tmp/pipewire.log" "$tmp/wireplumber.log" >&2
+    echo "Isolated PipeWire daemon did not become available" >&2
+    exit 1
+fi
+"$source_path" >"$tmp/test-source.log" 2>&1 &
+source_pid=$!
 service_pid=""
 consumer_pid=""
 cleanup() {
     if [[ -n "$consumer_pid" ]]; then
-        kill -INT "$consumer_pid" 2>/dev/null || true
+        kill -INT -- "-$consumer_pid" 2>/dev/null || true
         wait "$consumer_pid" 2>/dev/null || true
     fi
     if [[ -n "$service_pid" ]]; then
-        kill -INT "$service_pid" 2>/dev/null || true
+        kill -INT -- "-$service_pid" 2>/dev/null || true
         wait "$service_pid" 2>/dev/null || true
     fi
+    kill -INT "$source_pid" 2>/dev/null || true
+    wait "$source_pid" 2>/dev/null || true
     kill "$wireplumber_pid" "$pipewire_pid" 2>/dev/null || true
     wait "$wireplumber_pid" "$pipewire_pid" 2>/dev/null || true
     rm -rf "$tmp"
@@ -91,8 +117,13 @@ if ! grep -q 'ClearMic E2E Test Source' <<<"$device_list"; then
     echo "ClearMic did not enumerate the synthetic PipeWire microphone" >&2
     exit 1
 fi
+source_id=$(awk '/ClearMic E2E Test Source/ { found = 1; next } found && /ID:/ { print $2; exit }' <<<"$device_list")
+if [[ -z "$source_id" ]]; then
+    echo "Could not determine the synthetic PipeWire microphone ID" >&2
+    exit 1
+fi
 
-timeout --signal=INT --kill-after=2 6 "$cli_path" serve "" natural --noise-suppression=off >"$tmp/clearmic.log" 2>&1 &
+setsid timeout --signal=INT --kill-after=2 "$service_seconds" "$cli_path" serve "$source_id" natural --noise-suppression="$noise_suppression" >"$tmp/clearmic.log" 2>&1 &
 service_pid=$!
 virtual_source_ready=false
 source_id=""
@@ -118,7 +149,7 @@ if [[ "$virtual_source_ready" != true ]]; then
     exit 1
 fi
 
-timeout --signal=INT --kill-after=2 3 pw-cat --record --target clearmic_virtual_microphone \
+setsid timeout --signal=INT --kill-after=2 "$consumer_seconds" pw-cat --record --target clearmic_virtual_microphone \
     --rate 48000 --channels 1 --format s16 "$tmp/output.wav" >"$tmp/consumer.log" 2>&1 &
 consumer_pid=$!
 linked=false
@@ -145,12 +176,16 @@ fi
 wait "$consumer_pid" || true
 consumer_pid=""
 cat "$tmp/consumer.log"
-kill -INT "$service_pid" 2>/dev/null || true
+kill -INT -- "-$service_pid" 2>/dev/null || true
 wait "$service_pid" 2>/dev/null || true
 service_pid=""
 cat "$tmp/clearmic.log"
+if grep -Eq 'capture_overruns=[1-9][0-9]*|source_underruns=[1-9][0-9]*' "$tmp/clearmic.log"; then
+    echo "ClearMic reported a PipeWire buffer overrun or underrun" >&2
+    exit 1
+fi
 
-python3 - "$tmp/output.wav" <<'PY'
+python3 - "$tmp/output.wav" "$noise_suppression" <<'PY'
 import math
 import struct
 import sys
@@ -163,6 +198,8 @@ with wave.open(sys.argv[1], "rb") as wav_file:
 samples = struct.unpack("<" + "h" * (len(frames) // 2), frames[: len(frames) // 2 * 2])
 rms = math.sqrt(sum(sample * sample for sample in samples) / len(samples)) if samples else 0.0
 print(f"Virtual microphone capture: {len(samples)} frames, RMS {rms:.1f}")
-if len(samples) < 48000 or rms < 1000:
-    raise SystemExit("ClearMic virtual microphone did not deliver non-silent processed audio")
+if len(samples) < 48000:
+    raise SystemExit("ClearMic virtual microphone did not deliver a full second of audio")
+if sys.argv[2] == "off" and rms < 1000:
+    raise SystemExit("ClearMic virtual microphone did not deliver non-silent audio with noise suppression off")
 PY
