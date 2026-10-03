@@ -315,7 +315,9 @@ pw_stream* create_stream(pw_core* core, Session& session, const char* name, pw_p
     return *out;
 }
 
-void connect_audio(pw_stream* stream, const pw_direction direction, const char* target = nullptr) {
+void connect_audio(pw_stream* stream, const pw_direction direction, const char* target = nullptr,
+                   const pw_stream_flags flags = static_cast<pw_stream_flags>(
+                       PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_MAP_BUFFERS | PW_STREAM_FLAG_RT_PROCESS)) {
     spa_audio_info_raw format{};
     format.format = SPA_AUDIO_FORMAT_S16_LE;
     format.rate = 48000;
@@ -323,7 +325,6 @@ void connect_audio(pw_stream* stream, const pw_direction direction, const char* 
     std::array<std::uint8_t, 1024> storage{};
     spa_pod_builder builder = SPA_POD_BUILDER_INIT(storage.data(), storage.size());
     const spa_pod* params[] = {spa_format_audio_raw_build(&builder, SPA_PARAM_EnumFormat, &format)};
-    const auto flags = static_cast<pw_stream_flags>(PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_MAP_BUFFERS | PW_STREAM_FLAG_RT_PROCESS);
     if (target && pw_properties_set(const_cast<pw_properties*>(pw_stream_get_properties(stream)), PW_KEY_TARGET_OBJECT, target) < 0)
         throw std::runtime_error("Could not set the selected PipeWire microphone target");
     const auto result = pw_stream_connect(stream, direction, PW_ID_ANY, flags, params, 1);
@@ -364,7 +365,10 @@ void run_realtime_microphone(const std::string& device_id, const audio::Processi
     create_stream(runtime.core, runtime.session, "ClearMic Virtual Microphone", source_props,
                   &runtime.session.source_listener, &source_events, &runtime.session.source);
     connect_audio(runtime.session.capture, PW_DIRECTION_INPUT, device_id.empty() ? nullptr : device_id.c_str());
-    connect_audio(runtime.session.source, PW_DIRECTION_OUTPUT);
+    // The source is its own graph driver so its output callback runs for linked consumers.
+    connect_audio(runtime.session.source, PW_DIRECTION_OUTPUT, nullptr,
+        static_cast<pw_stream_flags>(PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_MAP_BUFFERS |
+                                     PW_STREAM_FLAG_DRIVER | PW_STREAM_FLAG_RT_PROCESS));
 
     const auto previous_int = std::signal(SIGINT, handle_signal);
     const auto previous_term = std::signal(SIGTERM, handle_signal);
