@@ -99,6 +99,12 @@ struct PipeWireRuntime {
 audio::AudioComparison capture_processed_audio(const std::string& device_id, const std::uint32_t duration_seconds) {
     if (duration_seconds == 0 || duration_seconds > 30)
         throw std::invalid_argument("Capture duration must be between 1 and 30 seconds");
+    DeviceManager device_manager;
+    const auto available_devices = device_manager.input_devices();
+    if (available_devices.empty()) throw std::runtime_error("PipeWire has no microphone source to capture");
+    if (!device_id.empty() && std::none_of(available_devices.begin(), available_devices.end(),
+            [&](const auto& device) { return device.id == device_id; }))
+        throw std::runtime_error("The selected PipeWire microphone is no longer available");
     pw_init(nullptr, nullptr);
     PipeWireRuntime runtime;
     runtime.loop = pw_main_loop_new(nullptr);
