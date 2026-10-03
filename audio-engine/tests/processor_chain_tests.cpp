@@ -110,4 +110,12 @@ void run_processor_chain_tests() {
     const auto compressed = process_constant_frame(compressor_processor, 16000);
     require(compressed.back() > 7000 && compressed.back() < 8000,
             "Compressor should reduce a steady synthetic signal above its threshold");
+
+    synthetic_settings.compressor_enabled = false;
+    synthetic_settings.automatic_gain_enabled = true;
+    ProcessorChain agc_processor(1, synthetic_settings);
+    (void)process_constant_frame(agc_processor, 1000);
+    const auto leveled = process_constant_frame(agc_processor, 1000);
+    require(leveled.back() >= 7900 && leveled.back() <= 8100,
+            "Automatic gain should raise a steady synthetic signal toward its configured RMS target");
 }
