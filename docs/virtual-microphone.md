@@ -12,7 +12,7 @@ The command opens the selected microphone (or PipeWire's default source), proces
 
 ## Windows
 
-WASAPI capture enumeration does not create a microphone endpoint. A virtual capture endpoint usually requires an installed audio driver or a supported third-party virtual audio component. ClearMic has not installed a driver or exposed a virtual microphone. Driver signing, setup requirements, maintenance, and security implications must be evaluated before choosing a shipping strategy.
+WASAPI capture enumeration does not create a microphone endpoint. The current Windows backend only opens capture endpoints; it does not publish processed PCM as a Windows microphone. A Windows virtual endpoint requires a driver or a supported third-party virtual audio component. ClearMic has not installed a driver or exposed a virtual microphone. Driver signing, setup requirements, maintenance, and security implications must be evaluated before choosing a shipping strategy.
 
 ## Current status
 
