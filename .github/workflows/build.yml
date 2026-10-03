@@ -155,6 +155,7 @@ jobs:
             echo "Ubuntu package was not produced" >&2
             exit 1
           fi
+          deb_file="$(realpath "$deb_file")"
           sudo apt-get install --yes "$deb_file"
           dpkg-query --show --showformat='${Status}\n' clearmic | grep -Fx 'install ok installed'
           desktop-file-validate /usr/share/applications/clearmic-cli.desktop
