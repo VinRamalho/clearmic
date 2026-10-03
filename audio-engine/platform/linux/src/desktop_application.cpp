@@ -382,9 +382,8 @@ void on_preset_changed(GtkComboBox* combo, gpointer data) {
     if (app.updating_preferences) return;
     const int index = gtk_combo_box_get_active(combo);
     if (index < 0 || index > 2) return;
-    const char* names[] = {"natural", "meeting", "strong"};
-    save_preset(names[index]);
     const auto settings = audio::settings_for_preset(static_cast<audio::Preset>(index));
+    save_preset(std::string(audio::preset_name(static_cast<audio::Preset>(index))));
     app.updating_preferences = true;
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(app.noise_suppression), settings.noise_suppression_enabled);
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(app.noise_gate), settings.noise_gate_enabled);
@@ -951,8 +950,8 @@ int run_desktop_application(const char* executable_path) {
     const bool background_mode = stored_background_mode();
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(app.background_toggle), background_mode);
     gtk_status_icon_set_visible(app.tray_icon, background_mode);
-    const auto preset = stored_preset();
-    const int preset_index = preset == "meeting" ? 1 : (preset == "strong" ? 2 : 0);
+    const auto preset = audio::preset_from_name(stored_preset());
+    const int preset_index = static_cast<int>(preset);
     const auto preset_settings = audio::settings_for_preset(static_cast<audio::Preset>(preset_index));
     app.updating_preferences = true;
     gtk_combo_box_set_active(GTK_COMBO_BOX(app.preset), preset_index);

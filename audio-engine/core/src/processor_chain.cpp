@@ -36,6 +36,21 @@ ProcessingSettings settings_for_preset(const Preset preset) noexcept {
     return {};
 }
 
+Preset preset_from_name(const std::string_view name) noexcept {
+    if (name == "meeting") return Preset::meeting;
+    if (name == "strong") return Preset::strong_noise_reduction;
+    return Preset::natural;
+}
+
+std::string_view preset_name(const Preset preset) noexcept {
+    switch (preset) {
+    case Preset::meeting: return "meeting";
+    case Preset::strong_noise_reduction: return "strong";
+    case Preset::natural: return "natural";
+    }
+    return "natural";
+}
+
 ProcessorChain::ProcessorChain(const std::uint16_t channels, ProcessingSettings settings)
     : channels_(channels), noise_suppressor_(channels),
       input_frame_(NoiseSuppressor::frame_samples * channels),

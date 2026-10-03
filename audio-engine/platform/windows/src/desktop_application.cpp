@@ -549,9 +549,9 @@ void refresh_devices(Application& app) {
 
 audio::Preset selected_preset(const Application& app) {
     const LRESULT row = SendMessageW(app.preset, CB_GETCURSEL, 0, 0);
-    if (row == 1) return audio::Preset::meeting;
-    if (row == 2) return audio::Preset::strong_noise_reduction;
-    return audio::Preset::natural;
+    if (row == 1) return audio::preset_from_name("meeting");
+    if (row == 2) return audio::preset_from_name("strong");
+    return audio::preset_from_name("natural");
 }
 
 audio::ProcessingSettings current_settings(const Application& app) {
@@ -568,9 +568,8 @@ audio::ProcessingSettings current_settings(const Application& app) {
 void save_processing_settings(Application& app) {
     const auto settings = current_settings(app);
     app.live_metrics.enhancement_enabled.store(settings.enhancement_enabled, std::memory_order_relaxed);
-    write_setting(app, L"processing", L"preset",
-        selected_preset(app) == audio::Preset::meeting ? L"meeting" :
-        (selected_preset(app) == audio::Preset::strong_noise_reduction ? L"strong" : L"natural"));
+    const auto preset = to_wide(std::string(audio::preset_name(selected_preset(app))));
+    write_setting(app, L"processing", L"preset", preset.c_str());
     write_setting(app, L"processing", L"noise-suppression", settings.noise_suppression_enabled ? L"1" : L"0");
     write_setting(app, L"processing", L"noise-gate", settings.noise_gate_enabled ? L"1" : L"0");
     write_setting(app, L"processing", L"automatic-gain", settings.automatic_gain_enabled ? L"1" : L"0");
@@ -717,8 +716,9 @@ void toggle_live_route(Application& app) {
 }
 
 void set_profile_controls(Application& app, const int index) {
-    const auto settings = audio::settings_for_preset(index == 1 ? audio::Preset::meeting
-        : (index == 2 ? audio::Preset::strong_noise_reduction : audio::Preset::natural));
+    const auto preset = index == 1 ? audio::preset_from_name("meeting")
+        : (index == 2 ? audio::preset_from_name("strong") : audio::preset_from_name("natural"));
+    const auto settings = audio::settings_for_preset(preset);
     SendMessageW(app.noise_suppression, BM_SETCHECK, settings.noise_suppression_enabled ? BST_CHECKED : BST_UNCHECKED, 0);
     SendMessageW(app.noise_gate, BM_SETCHECK, settings.noise_gate_enabled ? BST_CHECKED : BST_UNCHECKED, 0);
     SendMessageW(app.automatic_gain, BM_SETCHECK, settings.automatic_gain_enabled ? BST_CHECKED : BST_UNCHECKED, 0);
@@ -730,8 +730,8 @@ void set_profile_controls(Application& app, const int index) {
 }
 
 void load_settings(Application& app) {
-    const auto preset = read_setting(app, L"processing", L"preset", L"natural");
-    const int preset_index = preset == L"meeting" ? 1 : (preset == L"strong" ? 2 : 0);
+    const auto preset = audio::preset_from_name(to_utf8(read_setting(app, L"processing", L"preset", L"natural")));
+    const int preset_index = static_cast<int>(preset);
     SendMessageW(app.preset, CB_SETCURSEL, static_cast<WPARAM>(preset_index), 0);
     set_profile_controls(app, preset_index);
     SendMessageW(app.noise_suppression, BM_SETCHECK,

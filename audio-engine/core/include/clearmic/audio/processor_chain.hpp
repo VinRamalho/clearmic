@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <atomic>
 #include <span>
+#include <string_view>
 #include <vector>
 
 namespace clearmic::audio {
@@ -24,6 +25,8 @@ struct ProcessingSettings {
 };
 
 [[nodiscard]] ProcessingSettings settings_for_preset(Preset preset) noexcept;
+[[nodiscard]] Preset preset_from_name(std::string_view name) noexcept;
+[[nodiscard]] std::string_view preset_name(Preset preset) noexcept;
 
 // Stateful processor for interleaved signed PCM16 at 48 kHz. Construct it
 // before starting an audio callback; process() does not allocate or block.

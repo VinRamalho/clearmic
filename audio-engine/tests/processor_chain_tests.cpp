@@ -23,6 +23,13 @@ std::array<std::int16_t, clearmic::audio::NoiseSuppressor::frame_samples> proces
 
 void run_processor_chain_tests() {
     using namespace clearmic::audio;
+    require(preset_from_name("natural") == Preset::natural &&
+        preset_from_name("meeting") == Preset::meeting &&
+        preset_from_name("strong") == Preset::strong_noise_reduction &&
+        preset_from_name("invalid") == Preset::natural &&
+        preset_name(Preset::natural) == "natural" && preset_name(Preset::meeting) == "meeting" &&
+        preset_name(Preset::strong_noise_reduction) == "strong",
+        "persisted preset names must round-trip and unknown values must fall back to Natural");
     const auto natural = settings_for_preset(Preset::natural);
     const auto meeting = settings_for_preset(Preset::meeting);
     const auto strong = settings_for_preset(Preset::strong_noise_reduction);
