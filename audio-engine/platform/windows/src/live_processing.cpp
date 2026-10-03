@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -118,8 +119,16 @@ void drain_capture(IAudioCaptureClient* capture, audio::ProcessorChain& processo
         }
         for (UINT32 index = 0; index < frames; ++index)
             input[index] = (flags & AUDCLNT_BUFFERFLAGS_SILENT) != 0 ? 0 : reinterpret_cast<const std::int16_t*>(data)[index];
+        const auto processing_start = std::chrono::steady_clock::now();
         processor.process(std::span<const std::int16_t>(input).first(frames),
                           std::span<std::int16_t>(output).first(frames));
+        const auto processing_ms = static_cast<float>(std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - processing_start).count());
+        float previous_max = metrics.max_processing_packet_ms.load(std::memory_order_relaxed);
+        while (processing_ms > previous_max &&
+               !metrics.max_processing_packet_ms.compare_exchange_weak(previous_max, processing_ms,
+                   std::memory_order_relaxed, std::memory_order_relaxed)) {}
+        metrics.processing_time_available.store(true, std::memory_order_relaxed);
         if (frames != 0) {
             double input_square_sum = 0.0;
             double output_square_sum = 0.0;
@@ -206,6 +215,22 @@ void run_live_processing(const std::string& input_device_id, const std::string& 
     ComPtr<IAudioRenderClient> render(raw_render);
     UINT32 render_buffer_frames = 0;
     check_hresult(output_client->GetBufferSize(&render_buffer_frames), "Read audio render capacity");
+    UINT32 capture_buffer_frames = 0;
+    check_hresult(input_client->GetBufferSize(&capture_buffer_frames), "Read microphone capture capacity");
+    metrics.capture_buffer_frames.store(capture_buffer_frames, std::memory_order_relaxed);
+    metrics.render_buffer_frames.store(render_buffer_frames, std::memory_order_relaxed);
+    REFERENCE_TIME capture_latency = 0;
+    if (SUCCEEDED(input_client->GetStreamLatency(&capture_latency)) && capture_latency > 0) {
+        metrics.capture_latency_ms.store(static_cast<float>(capture_latency) / 10000.0F,
+                                         std::memory_order_relaxed);
+        metrics.capture_latency_available.store(true, std::memory_order_relaxed);
+    }
+    REFERENCE_TIME render_latency = 0;
+    if (SUCCEEDED(output_client->GetStreamLatency(&render_latency)) && render_latency > 0) {
+        metrics.render_latency_ms.store(static_cast<float>(render_latency) / 10000.0F,
+                                        std::memory_order_relaxed);
+        metrics.render_latency_available.store(true, std::memory_order_relaxed);
+    }
     std::vector<std::int16_t> render_buffer(render_buffer_frames);
     BYTE* startup_data = nullptr;
     check_hresult(render->GetBuffer(render_buffer_frames, &startup_data), "Acquire initial processed audio buffer");

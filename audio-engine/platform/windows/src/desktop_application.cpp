@@ -226,6 +226,34 @@ void update_device_status(Application& app) {
     SetWindowTextW(app.device_id, diagnostic.c_str());
 }
 
+void update_live_diagnostics(Application& app) {
+    const int index = selected_device_index(app);
+    if (index < 0) return;
+    const auto& device = app.devices[static_cast<std::size_t>(index)];
+    std::wstring diagnostic = L"Diagnostics · Backend: WASAPI · Device ID: " + to_wide(device.id);
+    diagnostic += L" · Mix format: ";
+    diagnostic += device.sample_rate_hz ? std::to_wstring(*device.sample_rate_hz) + L" Hz" : L"unavailable";
+    diagnostic += L" / ";
+    diagnostic += device.channels ? std::to_wstring(*device.channels) + L" channels" : L"channel count unavailable";
+    const auto capture_frames = app.live_metrics.capture_buffer_frames.load(std::memory_order_relaxed);
+    const auto render_frames = app.live_metrics.render_buffer_frames.load(std::memory_order_relaxed);
+    diagnostic += L" · Buffers: capture " + std::to_wstring(capture_frames) + L" / render " +
+                  std::to_wstring(render_frames) + L" frames";
+    diagnostic += L" · WASAPI latency: capture ";
+    diagnostic += app.live_metrics.capture_latency_available.load(std::memory_order_relaxed)
+        ? std::to_wstring(app.live_metrics.capture_latency_ms.load(std::memory_order_relaxed)) + L" ms"
+        : L"unavailable";
+    diagnostic += L" / render ";
+    diagnostic += app.live_metrics.render_latency_available.load(std::memory_order_relaxed)
+        ? std::to_wstring(app.live_metrics.render_latency_ms.load(std::memory_order_relaxed)) + L" ms"
+        : L"unavailable";
+    diagnostic += L" · Max DSP processing per capture packet: ";
+    diagnostic += app.live_metrics.processing_time_available.load(std::memory_order_relaxed)
+        ? std::to_wstring(app.live_metrics.max_processing_packet_ms.load(std::memory_order_relaxed)) + L" ms"
+        : L"measuring";
+    SetWindowTextW(app.device_id, diagnostic.c_str());
+}
+
 void update_controls(Application& app) {
     const bool has_device = selected_device_index(app) >= 0;
     const bool idle = !app.recording && !app.live_routing;
@@ -419,6 +447,14 @@ void toggle_live_route(Application& app) {
     app.stop_live_route.store(false, std::memory_order_relaxed);
     app.live_metrics.input_rms.store(0.0F, std::memory_order_relaxed);
     app.live_metrics.output_rms.store(0.0F, std::memory_order_relaxed);
+    app.live_metrics.capture_buffer_frames.store(0, std::memory_order_relaxed);
+    app.live_metrics.render_buffer_frames.store(0, std::memory_order_relaxed);
+    app.live_metrics.capture_latency_available.store(false, std::memory_order_relaxed);
+    app.live_metrics.render_latency_available.store(false, std::memory_order_relaxed);
+    app.live_metrics.capture_latency_ms.store(0.0F, std::memory_order_relaxed);
+    app.live_metrics.render_latency_ms.store(0.0F, std::memory_order_relaxed);
+    app.live_metrics.processing_time_available.store(false, std::memory_order_relaxed);
+    app.live_metrics.max_processing_packet_ms.store(0.0F, std::memory_order_relaxed);
     app.live_routing = true;
     SendMessageW(app.input_level, PBM_SETPOS, 0, 0);
     SendMessageW(app.output_level, PBM_SETPOS, 0, 0);
@@ -581,6 +617,7 @@ LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPAR
                          static_cast<WPARAM>(std::clamp(input * 100.0F, 0.0F, 100.0F)), 0);
             SendMessageW(app->output_level, PBM_SETPOS,
                          static_cast<WPARAM>(std::clamp(output * 100.0F, 0.0F, 100.0F)), 0);
+            update_live_diagnostics(*app);
         }
         return 0;
     case WM_HSCROLL:

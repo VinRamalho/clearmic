@@ -26,6 +26,14 @@ struct CaptureDiagnostics {
 struct LiveProcessingMetrics {
     std::atomic<float> input_rms{};
     std::atomic<float> output_rms{};
+    std::atomic<std::uint32_t> capture_buffer_frames{};
+    std::atomic<std::uint32_t> render_buffer_frames{};
+    std::atomic_bool capture_latency_available{};
+    std::atomic_bool render_latency_available{};
+    std::atomic<float> capture_latency_ms{};
+    std::atomic<float> render_latency_ms{};
+    std::atomic_bool processing_time_available{};
+    std::atomic<float> max_processing_packet_ms{};
 };
 
 [[nodiscard]] audio::AudioComparison capture_processed_audio(const std::string& device_id,
