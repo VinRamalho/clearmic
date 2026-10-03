@@ -3,6 +3,7 @@
 ## Ubuntu 24.04+ / PipeWire
 
 - The Linux PipeWire backend and live `record-test` path compile in Ubuntu 24.04 CI and in a local Ubuntu 24.04 WSL environment.
+- On 2026-10-03, after installing the documented Linux development packages in WSL, the full GTK/PipeWire build completed, all 11 CTest cases passed, and `packaging/linux/build-deb.sh` produced `clearmic_0.1.0_amd64.deb`. Installing that package with apt resolved its declared runtime dependencies; `clearmic-cli --help`, desktop-entry validation, and an Xvfb launch found the ClearMic window. Closing it with `xdotool windowclose` exited successfully but emitted GTK/GDK teardown warnings, so this is startup/package evidence rather than a clean desktop shutdown or physical audio validation.
 - The WSL environment has no connected PipeWire microphone source. Enumeration reports no input device; the capture command rejects this state instead of producing a misleading silent recording. No physical device audio was captured and no hardware compatibility is claimed from this run.
 - The Linux backend now maps a PipeWire Bluetooth address to BlueZ's reported battery percentage when available. WSL does not expose a BlueZ system bus or connected Bluetooth microphone, so this telemetry path has not been validated against physical hardware here.
 - On a desktop session with PipeWire, run `clearmic-cli devices` and `clearmic-cli record-test 5 original.wav processed.wav [device-id]` to validate an actual source. The current WSL environment cannot perform this step.
