@@ -483,10 +483,9 @@ Build the current command-line `.deb` from an Ubuntu 24.04 environment using `pa
 
 - [x] Linux PipeWire capture-to-processing pipeline
 - [x] Bounded capture/virtual-source audio queue
+- [x] Basic processed-duration and buffer underrun/overrun counters
 - [ ] Windows real-time processing pipeline
 - [ ] Latency measurements
-- [ ] Buffer monitoring
-- [ ] Underrun / overrun diagnostics
 
 ### Phase 5 — Virtual Microphone
 
@@ -506,7 +505,7 @@ Build the current command-line `.deb` from an Ubuntu 24.04 environment using `pa
 ### Phase 7 — Distribution
 
 - [ ] Windows installer
-- [ ] Ubuntu `.deb`
+- [x] Ubuntu command-line `.deb`
 - [ ] GitHub Actions builds
 - [ ] Automated tests
 - [ ] Release pipeline
