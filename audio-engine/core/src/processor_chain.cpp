@@ -110,22 +110,21 @@ void ProcessorChain::process_frame() noexcept {
     // Smooth gain changes to avoid clicks when a setting or preset changes.
     constexpr float gain_attack_smoothing = 0.004158F; // 5 ms at 48 kHz: reduce gain promptly on loud input.
     constexpr float gain_release_smoothing = 0.000208F; // 100 ms at 48 kHz: recover gain without pumping.
-    const auto samples_per_channel = output_frame_.size();
-    for (std::size_t index = 0; index < samples_per_channel; ++index) {
+    for (std::size_t index = 0; index < output_frame_.size(); index += channels_) {
         const auto gain_smoothing = requested_gain < gain_linear_
             ? gain_attack_smoothing : gain_release_smoothing;
         gain_linear_ += (requested_gain - gain_linear_) * gain_smoothing;
-        float sample = static_cast<float>(output_frame_[index]) * gain_linear_;
-        const auto magnitude = std::abs(sample);
-        if (current_settings.compressor_enabled) {
-            if (magnitude > compressor_threshold)
-                sample = std::copysign(compressor_threshold + (magnitude - compressor_threshold) * 0.25F, sample);
-        }
         if (current_settings.noise_gate_enabled)
             gate_gain_ += (gate_target - gate_gain_) *
                           (gate_target > gate_gain_ ? gate_attack_smoothing : gate_release_smoothing);
-        sample *= gate_gain_;
-        output_frame_[index] = clip_sample(sample);
+        for (std::size_t channel = 0; channel < channels_; ++channel) {
+            const auto sample_index = index + channel;
+            float sample = static_cast<float>(output_frame_[sample_index]) * gain_linear_;
+            const auto magnitude = std::abs(sample);
+            if (current_settings.compressor_enabled && magnitude > compressor_threshold)
+                sample = std::copysign(compressor_threshold + (magnitude - compressor_threshold) * 0.25F, sample);
+            output_frame_[sample_index] = clip_sample(sample * gate_gain_);
+        }
     }
     input_samples_ = 0;
     output_offset_ = 0;

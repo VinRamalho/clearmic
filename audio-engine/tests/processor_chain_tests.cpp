@@ -96,6 +96,19 @@ void run_processor_chain_tests() {
     require(gained.back() >= 1950 && gained.back() <= 2050,
             "Input gain should reach the configured +6 dB level without an abrupt gain step");
 
+    std::array<std::int16_t, NoiseSuppressor::frame_samples * 2> stereo_input{};
+    std::array<std::int16_t, NoiseSuppressor::frame_samples * 2> stereo_output{};
+    for (std::size_t index = 0; index < stereo_input.size(); index += 2) {
+        stereo_input[index] = 1000;
+        stereo_input[index + 1] = 1000;
+    }
+    ProcessorChain stereo_gain_processor(2, synthetic_settings);
+    stereo_gain_processor.process(stereo_input, stereo_output); // Fill the initial latency frame.
+    stereo_gain_processor.process(stereo_input, stereo_output);
+    for (std::size_t index = 0; index < stereo_output.size(); index += 2)
+        require(stereo_output[index] == stereo_output[index + 1],
+                "Stereo channels should receive identical gain at each audio sample time");
+
     synthetic_settings.input_gain_db = 0.0F;
     synthetic_settings.noise_gate_enabled = true;
     synthetic_settings.gate_threshold_db = -30.0F;
