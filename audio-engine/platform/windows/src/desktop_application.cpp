@@ -7,6 +7,7 @@
 #include <windows.h>
 #include <commctrl.h>
 #include <dbt.h>
+#include <mmdeviceapi.h>
 #include <shellapi.h>
 #include <shlobj.h>
 #include <mmsystem.h>
@@ -57,6 +58,7 @@ constexpr int input_meter_caption = 123;
 constexpr UINT live_route_complete_message = WM_APP + 2;
 constexpr UINT live_route_started_message = WM_APP + 3;
 constexpr UINT tray_callback_message = WM_APP + 4;
+constexpr UINT audio_endpoint_changed_message = WM_APP + 5;
 constexpr UINT device_refresh_timer = 3;
 constexpr UINT input_meter_timer = 4;
 constexpr int tray_open_command = 201;
@@ -101,6 +103,8 @@ struct Application {
     HWND render_output{};
     HWND live_route{};
     HWND virtual_cable_help{};
+    IMMDeviceEnumerator* notification_enumerator{};
+    IMMNotificationClient* endpoint_notifications{};
     std::vector<audio::AudioDevice> devices;
     std::vector<audio::AudioDevice> render_devices;
     std::wstring settings_file;
@@ -117,6 +121,69 @@ struct Application {
     bool samples_ready{};
     bool tray_icon_added{};
 };
+
+class EndpointNotification final : public IMMNotificationClient {
+public:
+    explicit EndpointNotification(HWND window) : window_(window) {}
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID interface_id, void** object) override {
+        if (!object) return E_POINTER;
+        *object = nullptr;
+        if (interface_id == __uuidof(IUnknown) || interface_id == __uuidof(IMMNotificationClient)) {
+            *object = static_cast<IMMNotificationClient*>(this);
+            AddRef();
+            return S_OK;
+        }
+        return E_NOINTERFACE;
+    }
+
+    ULONG STDMETHODCALLTYPE AddRef() override { return ++references_; }
+
+    ULONG STDMETHODCALLTYPE Release() override {
+        const ULONG remaining = --references_;
+        if (remaining == 0) delete this;
+        return remaining;
+    }
+
+    HRESULT STDMETHODCALLTYPE OnDeviceStateChanged(LPCWSTR, DWORD) override { return notify(); }
+    HRESULT STDMETHODCALLTYPE OnDeviceAdded(LPCWSTR) override { return notify(); }
+    HRESULT STDMETHODCALLTYPE OnDeviceRemoved(LPCWSTR) override { return notify(); }
+    HRESULT STDMETHODCALLTYPE OnDefaultDeviceChanged(EDataFlow, ERole, LPCWSTR) override { return notify(); }
+    HRESULT STDMETHODCALLTYPE OnPropertyValueChanged(LPCWSTR, const PROPERTYKEY) override { return notify(); }
+
+private:
+    HRESULT notify() const noexcept {
+        return PostMessageW(window_, audio_endpoint_changed_message, 0, 0) ? S_OK : HRESULT_FROM_WIN32(GetLastError());
+    }
+
+    std::atomic<ULONG> references_{1};
+    HWND window_{};
+};
+
+void register_endpoint_notifications(Application& app) {
+    IMMDeviceEnumerator* enumerator = nullptr;
+    const HRESULT created = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+        __uuidof(IMMDeviceEnumerator), reinterpret_cast<void**>(&enumerator));
+    if (FAILED(created) || !enumerator) return;
+    auto* notifications = new EndpointNotification(app.window);
+    const HRESULT registered = enumerator->RegisterEndpointNotificationCallback(notifications);
+    if (FAILED(registered)) {
+        notifications->Release();
+        enumerator->Release();
+        return;
+    }
+    app.notification_enumerator = enumerator;
+    app.endpoint_notifications = notifications;
+}
+
+void unregister_endpoint_notifications(Application& app) {
+    if (app.notification_enumerator && app.endpoint_notifications)
+        app.notification_enumerator->UnregisterEndpointNotificationCallback(app.endpoint_notifications);
+    if (app.endpoint_notifications) app.endpoint_notifications->Release();
+    if (app.notification_enumerator) app.notification_enumerator->Release();
+    app.endpoint_notifications = nullptr;
+    app.notification_enumerator = nullptr;
+}
 
 void toggle_live_route(Application& app);
 
@@ -751,7 +818,6 @@ void initialize_controls(Application& app) {
 
     app.settings_file = configuration_file();
     load_settings(app);
-    SetTimer(app.window, 1, 3000, nullptr);
     SetTimer(app.window, 2, 80, nullptr);
     SetTimer(app.window, input_meter_timer, 250, nullptr);
 }
@@ -775,10 +841,10 @@ LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPAR
     case WM_CREATE:
         initialize_controls(*app);
         add_tray_icon(*app);
+        register_endpoint_notifications(*app);
         return 0;
     case WM_TIMER:
-        if (wparam == 1) refresh_devices(*app);
-        else if (wparam == 2 && app->live_routing) {
+        if (wparam == 2 && app->live_routing) {
             const auto input = app->live_metrics.input_rms.load(std::memory_order_relaxed);
             const auto output = app->live_metrics.output_rms.load(std::memory_order_relaxed);
             SendMessageW(app->input_level, PBM_SETPOS,
@@ -801,6 +867,9 @@ LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPAR
             return TRUE;
         }
         return DefWindowProcW(window, message, wparam, lparam);
+    case audio_endpoint_changed_message:
+        SetTimer(window, device_refresh_timer, 300, nullptr);
+        return 0;
     case WM_HSCROLL:
         if (reinterpret_cast<HWND>(lparam) == app->input_gain) {
             SetWindowTextW(app->gain_value,
@@ -916,10 +985,10 @@ LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPAR
         if (app->live_route_thread.joinable()) app->live_route_thread.join();
         if (app->capture_thread.joinable()) app->capture_thread.join();
         PlaySoundW(nullptr, nullptr, 0);
-        KillTimer(window, 1);
         KillTimer(window, 2);
         KillTimer(window, input_meter_timer);
         KillTimer(window, device_refresh_timer);
+        unregister_endpoint_notifications(*app);
         remove_tray_icon(*app);
         DestroyWindow(window);
         return 0;
@@ -939,6 +1008,8 @@ LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPAR
 }
 
 int run_desktop_application() {
+    const HRESULT com_initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    if (FAILED(com_initialized) && com_initialized != RPC_E_CHANGED_MODE) return 1;
     Application app;
     WNDCLASSEXW window_class_info{sizeof(window_class_info)};
     window_class_info.lpfnWndProc = window_procedure;
@@ -946,13 +1017,19 @@ int run_desktop_application() {
     window_class_info.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     window_class_info.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     window_class_info.lpszClassName = window_class;
-    if (!RegisterClassExW(&window_class_info) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return 1;
+    if (!RegisterClassExW(&window_class_info) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+        if (SUCCEEDED(com_initialized)) CoUninitialize();
+        return 1;
+    }
     RECT bounds{0, 0, 740, 722};
     AdjustWindowRect(&bounds, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, FALSE);
     HWND window = CreateWindowExW(0, window_class, L"ClearMic", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
                                   CW_USEDEFAULT, CW_USEDEFAULT, bounds.right - bounds.left, bounds.bottom - bounds.top,
                                   nullptr, nullptr, GetModuleHandleW(nullptr), &app);
-    if (!window) return 1;
+    if (!window) {
+        if (SUCCEEDED(com_initialized)) CoUninitialize();
+        return 1;
+    }
     ShowWindow(window, SW_SHOW);
     UpdateWindow(window);
     MSG message{};
@@ -960,6 +1037,7 @@ int run_desktop_application() {
         TranslateMessage(&message);
         DispatchMessageW(&message);
     }
+    if (SUCCEEDED(com_initialized)) CoUninitialize();
     return static_cast<int>(message.wParam);
 }
 }

@@ -22,6 +22,7 @@
 
 ### Current Windows audio endpoints
 
+- The desktop panel now registers `IMMNotificationClient` to refresh after endpoint additions, removals, state changes, default-device changes, and property updates; Windows device-tree notifications remain debounced as a fallback for related PnP changes. The MinGW cross-build and nine Windows core tests passed on 2026-10-03. Native endpoint-change callbacks and physical hotplug were not exercised in this run.
 - Input endpoint observed: `Microfone (Realtek(R) Audio)`.
 - Output endpoint observed: `Altofalantes (Realtek(R) Audio)`.
 - A fresh native MinGW-built `clearmic-cli devices` run on 2026-10-03 again listed the Realtek endpoint as the only selectable microphone (48 kHz, two channels). The supplemental inventory also listed `EDIFIER TWS1 Pro 2 Hands-Free AG` and `WF-C710N Hands-Free AG` as non-selectable Bluetooth audio functions, not capture endpoints; this CLI output included no battery values for those functions. The matching `clearmic-core-tests.exe` built by MinGW ran natively on Windows and exited with code 0.
