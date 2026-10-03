@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=ClearMic Audio Tools
+Comment=Inspect microphones and start the ClearMic virtual microphone
+Exec=clearmic-cli devices
+Terminal=true
+Categories=AudioVideo;Audio;

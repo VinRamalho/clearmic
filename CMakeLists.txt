@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.20)
 
 project(ClearMic VERSION 0.1.0 LANGUAGES C CXX)
 
+include(GNUInstallDirs)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -116,6 +118,7 @@ endif()
 
 add_executable(clearmic-cli audio-engine/core/src/main.cpp)
 target_link_libraries(clearmic-cli PRIVATE clearmic_core clearmic_platform)
+install(TARGETS clearmic-cli RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
 include(CTest)
 if(BUILD_TESTING)

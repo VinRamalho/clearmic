@@ -1,0 +1,27 @@
+.TH CLEARMIC-CLI 1 "October 2026" "ClearMic 0.1.0" "User Commands"
+.SH NAME
+clearmic-cli \- local microphone enhancement tools
+.SH SYNOPSIS
+.B clearmic-cli
+.I command
+.SH DESCRIPTION
+ClearMic provides local microphone discovery, explicit A/B capture tests, WAV processing, and (on Linux) a PipeWire real-time service that exposes processed audio as a virtual microphone.
+.SH COMMANDS
+.TP
+.B devices
+List available microphone sources.
+.TP
+.B record-test \fIseconds original.wav processed.wav\fR [\fIdevice-id\fR]
+Capture up to 30 seconds and write the original and processed samples for manual comparison.
+.TP
+.B serve
+Continuously process the default PipeWire microphone and expose the result as ClearMic Virtual Microphone. Keep the command running while another application uses the virtual source. Stop with Ctrl+C.
+.TP
+.B process \fIinput.wav output.wav\fR
+Apply the offline processor to supported 48 kHz PCM16 WAV audio.
+.SH REQUIREMENTS
+Linux audio commands require a running PipeWire server and an available capture source. This CLI package does not install or configure a graphical desktop application.
+.SH PRIVACY
+Audio is processed locally. Recording files are created only by the explicit record-test command.
+.SH AUTHOR
+ClearMic contributors

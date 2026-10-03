@@ -4,7 +4,7 @@
 
 ClearMic is an open-source, cross-platform desktop application designed to improve microphone voice quality in real time.
 
-> **Development status:** the C++20 device model, Windows WASAPI and Linux PipeWire input backends, shared stateful DSP chain, and CI builds for Windows and Ubuntu 24.04 are in place. Both platforms provide CLI `record-test` A/B capture. Linux also provides `serve`, which continuously captures from a PipeWire microphone, processes audio, and publishes a `ClearMic Virtual Microphone` source; stop it with Ctrl+C. The service and virtual source are not yet packaged as a desktop application, and Windows continuous routing, desktop UI, battery telemetry, persistent settings, and installers remain unimplemented. This is an early development project, not an installable product.
+> **Development status:** the C++20 device model, Windows WASAPI and Linux PipeWire input backends, shared stateful DSP chain, and CI builds for Windows and Ubuntu 24.04 are in place. Both platforms provide CLI `record-test` A/B capture. Linux also provides `serve`, which continuously captures from a PipeWire microphone, processes audio, and publishes a `ClearMic Virtual Microphone` source; stop it with Ctrl+C. An early Ubuntu `.deb` build is available for the command-line tools. The service is not yet packaged as a desktop application, and Windows continuous routing, graphical controls, battery telemetry, persistent settings, and installers remain unimplemented. This is an early development project, not a finished product.
 
 It aims to reduce background noise, echo, room reverberation, and inconsistent microphone levels while preserving a natural-sounding voice.
 
@@ -447,7 +447,7 @@ Install with:
 sudo apt install ./clearmic_<version>_amd64.deb
 ```
 
-After installation, ClearMic should be available from the desktop application menu.
+Build the current command-line `.deb` from an Ubuntu 24.04 environment using `packaging/linux/build-deb.sh`. The package includes `clearmic-cli`, a man page, and a terminal launcher for device discovery. Start real-time routing with `clearmic-cli serve`; select **ClearMic Virtual Microphone** in another application and stop the service with Ctrl+C. A graphical control panel and automatic service lifecycle are not included yet.
 
 ---
 
@@ -461,6 +461,7 @@ After installation, ClearMic should be available from the desktop application me
 - [x] Linux / PipeWire device discovery
 - [x] Windows / WASAPI device discovery
 - [x] CLI device enumeration
+- [x] Ubuntu command-line `.deb` packaging
 
 ### Phase 2 — Recording
 
