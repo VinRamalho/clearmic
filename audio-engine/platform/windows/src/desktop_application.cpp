@@ -455,6 +455,7 @@ void toggle_live_route(Application& app) {
     app.live_metrics.render_latency_ms.store(0.0F, std::memory_order_relaxed);
     app.live_metrics.processing_time_available.store(false, std::memory_order_relaxed);
     app.live_metrics.max_processing_packet_ms.store(0.0F, std::memory_order_relaxed);
+    update_live_diagnostics(app);
     app.live_routing = true;
     SendMessageW(app.input_level, PBM_SETPOS, 0, 0);
     SendMessageW(app.output_level, PBM_SETPOS, 0, 0);
@@ -709,6 +710,7 @@ LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPAR
         SetWindowTextW(app->status, completion->message.c_str());
         update_controls(*app);
         refresh_devices(*app);
+        update_device_status(*app);
         return 0;
     }
     case live_route_started_message:

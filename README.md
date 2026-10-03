@@ -30,7 +30,7 @@ Common issues include:
 - Aggressive or poor-quality built-in processing
 - Bluetooth headset microphone limitations
 
-ClearMic provides a local processing layer between the physical microphone and applications. Today, the continuous virtual-microphone route is implemented on Linux through PipeWire. Windows supports device selection and explicit A/B capture/playback; its continuous virtual-microphone route is still under development.
+ClearMic provides a local processing layer between the physical microphone and applications. Today, the continuous virtual-microphone route is implemented on Linux through PipeWire. Windows also has a continuous WASAPI capture/process/render route that sends processed audio to a selected playback endpoint; exposing it as a microphone requires a separately installed compatible virtual audio cable, which ClearMic does not bundle.
 
 ```text
 Physical Microphone
@@ -63,7 +63,7 @@ On Linux, the processed microphone can be selected like any other PipeWire sourc
 ### Audio enhancement
 
 - [x] Linux real-time noise suppression
-- [ ] Windows real-time noise suppression
+- [x] Windows real-time noise suppression (live WASAPI route; virtual cable required to expose it to apps)
 - [ ] Acoustic echo cancellation (requires synchronized playback reference)
 - [ ] Room reverberation reduction
 - [x] Automatic gain control
@@ -119,7 +119,7 @@ ClearMic targets:
 | Platform | Audio Backend | Status |
 | --- | --- | --- |
 | Ubuntu / Linux | PipeWire | 🚧 GTK desktop panel, device monitoring, presets/controls, A/B capture/playback, live service, and virtual source; native hardware quality validation pending |
-| Windows 11 | WASAPI | 🚧 Native desktop panel, device monitoring, saved DSP controls, A/B capture/playback, and CI-verified MSI lifecycle; continuous virtual microphone pending |
+| Windows 11 | WASAPI | 🚧 Native desktop panel, device monitoring, saved DSP controls, A/B capture/playback, continuous processing to an explicitly selected render endpoint, and CI-verified MSI lifecycle; virtual microphone still requires a separate cable |
 
 Additional Linux distributions using PipeWire may work in the future.
 
@@ -232,7 +232,7 @@ ClearMic is designed with the following principles:
 - Detection of underruns and overruns
 - Measurable processing latency
 
-The Windows panel shows the selected WASAPI device ID, mix sample rate, and channel count; after an A/B capture it also shows the actual capture buffer size, nonzero WASAPI stream latency when reported, and offline DSP wall time for the sample. A missing or zero latency value remains unavailable. Processing wall time is not per-callback processing latency, and end-to-end latency for a Windows virtual-microphone route remains unavailable. The Linux service reports processed duration and underrun/overrun counters; callback and capture latency instrumentation remains open. ClearMic does not claim fixed measurements such as:
+The Windows panel shows the selected WASAPI device ID, mix sample rate, and channel count; after an A/B capture it also shows the actual capture buffer size, nonzero WASAPI stream latency when reported, and offline DSP wall time for the sample. During live routing it shows capture/render buffer capacities, stream latency when reported, and maximum DSP processing time per capture packet. A missing or zero latency value remains unavailable. These values do not measure total end-to-end latency for a Windows virtual-microphone route. The Linux service reports processed duration and underrun/overrun counters; callback and capture latency instrumentation remains open. ClearMic does not claim fixed measurements such as:
 
 ```text
 Sample Rate:        48000 Hz
@@ -478,7 +478,7 @@ Build the Ubuntu `.deb` from an Ubuntu 24.04 environment using `packaging/linux/
 - [x] Bounded capture/virtual-source audio queue
 - [x] Basic processed-duration and buffer underrun/overrun counters
 - [x] Windows real-time capture/process/render pipeline (virtual cable required)
-- [ ] Latency measurements
+- [x] Partial WASAPI stream and per-packet DSP timing diagnostics (total end-to-end latency remains unmeasured)
 
 ### Phase 5 — Virtual Microphone
 
