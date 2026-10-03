@@ -165,8 +165,16 @@ jobs:
             done
             exit 100
           fi
-          dpkg-query --show --showformat='${Status}\n' clearmic | grep -Fx 'install ok installed'
-          desktop-file-validate /usr/share/applications/clearmic-cli.desktop
+          dpkg-query --show --showformat='${Status}\n' clearmic | grep -Fx 'install ok installed' || {
+            echo "::error file=.github/workflows/build.yml,title=Ubuntu package status check failed::dpkg did not report clearmic as installed"
+            exit 1
+          }
+          desktop-file-validate /usr/share/applications/clearmic-cli.desktop || {
+            echo "::error file=.github/workflows/build.yml,title=Desktop entry validation failed::desktop-file-validate rejected the installed ClearMic launcher"
+            exit 1
+          }
+          launcher_log="$RUNNER_TEMP/clearmic-launcher-test.log"
+          set +e
           timeout --signal=TERM 10s xvfb-run -a bash -euo pipefail -c '
             gtk-launch clearmic-cli &
             app_pid=$!
@@ -185,7 +193,17 @@ jobs:
             echo "Installed ClearMic launcher opened window: $window_id"
             /usr/bin/python3 -c "import sys; from Xlib import X, display, protocol; d=display.Display(); w=d.create_resource_object(\"window\", int(sys.argv[1])); atom=d.intern_atom(\"WM_DELETE_WINDOW\"); wm_protocols=d.intern_atom(\"WM_PROTOCOLS\"); assert atom in w.get_wm_protocols(), \"Window does not advertise WM_DELETE_WINDOW\"; event=protocol.event.ClientMessage(window=w, client_type=wm_protocols, data=(32, [atom, X.CurrentTime, 0, 0, 0])); w.send_event(event, event_mask=0, propagate=False); d.flush()" "$window_id"
             wait "$app_pid"
-          '
+          ' >"$launcher_log" 2>&1
+          launcher_status=$?
+          set -e
+          if (( launcher_status != 0 )); then
+            echo "::error file=.github/workflows/build.yml,title=Installed desktop launch test failed::launcher smoke test output follows"
+            tail -n 20 "$launcher_log" | sed 's/%/%25/g; s/\r/%0D/g' | while IFS= read -r line; do
+              echo "::error file=.github/workflows/build.yml::$line"
+            done
+            exit "$launcher_status"
+          fi
+          cat "$launcher_log"
       - name: Preserve Ubuntu package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
