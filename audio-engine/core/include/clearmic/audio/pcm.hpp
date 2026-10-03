@@ -15,4 +15,9 @@ struct PcmAudio {
     }
 };
 
+struct AudioComparison {
+    PcmAudio original;
+    PcmAudio processed;
+};
+
 } // namespace clearmic::audio

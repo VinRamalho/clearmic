@@ -19,16 +19,15 @@ struct Enumeration {
     bool synchronized{false};
 };
 
-void on_global(void* data, const std::uint32_t, const std::uint32_t, const char* type,
+void on_global(void* data, const std::uint32_t global_id, const std::uint32_t, const char* type,
                const std::uint32_t, const spa_dict* properties) {
     if (std::string_view(type) != PW_TYPE_INTERFACE_Node || !properties) return;
     const char* media_class = spa_dict_lookup(properties, PW_KEY_MEDIA_CLASS);
     if (!media_class || std::string_view(media_class) != "Audio/Source") return;
     const char* name = spa_dict_lookup(properties, PW_KEY_NODE_DESCRIPTION);
     if (!name) name = spa_dict_lookup(properties, PW_KEY_NODE_NAME);
-    const char* id = spa_dict_lookup(properties, PW_KEY_OBJECT_SERIAL);
     audio::AudioDevice device;
-    device.id = id ? id : (name ? name : "unknown");
+    device.id = std::to_string(global_id);
     device.name = name ? name : "Unnamed PipeWire source";
     device.connection = audio::ConnectionState::connected;
     static_cast<Enumeration*>(data)->devices.push_back(std::move(device));

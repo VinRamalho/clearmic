@@ -12,7 +12,9 @@ The RNNoise frame API processes 480 samples per channel at 48 kHz, a 10 ms frame
 
 The shared `ProcessorChain` accepts arbitrary callback block sizes, carries partial 480-sample RNNoise frames across calls, and uses preallocated buffers. It adds input gain, an optional noise gate, a soft-knee compressor, and a smoothed RMS-based automatic gain stage. Natural, Meeting, and Strong Noise Reduction presets set actual processor options. Atomic controls let a UI thread update parameters without taking a mutex in the audio callback. Changing enhancement settings leaves the RNNoise state warm so toggling does not reinitialize the DSP in an audio callback.
 
-RNNoise contributes one 10 ms algorithmic frame of latency. The chain returns silence for the first frame while initializing its pipeline, then maintains frame order across callbacks. It currently accepts interleaved PCM16 at 48 kHz. This core is implemented, but neither Windows nor PipeWire live capture is connected to it yet.
+RNNoise contributes one 10 ms algorithmic frame of latency. The chain returns silence for the first frame while initializing its pipeline, then maintains frame order across callbacks. It currently accepts interleaved PCM16 at 48 kHz. A Linux PipeWire capture-test command now feeds live source buffers through the chain and writes original/processed recordings after capture completes. This is a bounded test workflow, not yet a persistent live virtual-microphone service or GUI recording control.
+
+On Linux, run `clearmic-cli devices`, then `clearmic-cli record-test 5 original.wav processed.wav [device-id]`. Omitting the device ID lets PipeWire choose its default source. The command records only after explicit invocation, limits the sample to 30 seconds, performs file writes after capture stops, and keeps all data local. Select the processed file through an ordinary audio player to listen to it; in-app A/B playback is not implemented.
 
 ## Not implemented yet
 

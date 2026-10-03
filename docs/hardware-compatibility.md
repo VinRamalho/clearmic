@@ -1,5 +1,11 @@
 # Hardware compatibility
 
+## Ubuntu 24.04+ / PipeWire
+
+- The Linux PipeWire backend and live `record-test` path compile in Ubuntu 24.04 CI and in a local Ubuntu 24.04 WSL environment.
+- The WSL environment had no PipeWire client configuration or running PipeWire server. Both device enumeration and capture returned a backend-unavailable error before any device was selected; no audio was captured and no hardware compatibility is claimed from this run.
+- On a desktop session with PipeWire, run `clearmic-cli devices` and `clearmic-cli record-test 5 original.wav processed.wav [device-id]` to validate an actual source. The current WSL environment cannot perform this step.
+
 ## Development machine: Windows 11
 
 ### Current Windows audio endpoints

@@ -18,11 +18,32 @@ void print_usage() {
     std::cout << "ClearMic audio tools\n\n"
                  "Usage:\n"
                  "  clearmic-cli devices\n"
-                 "  clearmic-cli process <input.wav> <processed.wav>\n";
+                 "  clearmic-cli process <input.wav> <processed.wav>\n"
+#ifdef __linux__
+                 "  clearmic-cli record-test <seconds> <original.wav> <processed.wav> [device-id]\n"
+#endif
+                 ;
 }
 }
 
 int main(const int argc, char** argv) {
+#ifdef __linux__
+    if ((argc == 5 || argc == 6) && std::string_view(argv[1]) == "record-test") {
+        try {
+            const auto seconds = static_cast<std::uint32_t>(std::stoul(argv[2]));
+            const std::string device_id = argc == 6 ? argv[5] : "";
+            auto comparison = clearmic::platform::pipewire::capture_processed_audio(device_id, seconds);
+            clearmic::audio::write_pcm16_wav(argv[3], comparison.original);
+            clearmic::audio::write_pcm16_wav(argv[4], comparison.processed);
+            std::cout << "Recorded " << seconds << " seconds from the selected PipeWire microphone.\n"
+                      << "Original: " << argv[3] << "\nProcessed: " << argv[4] << "\n";
+        } catch (const std::exception& error) {
+            std::cerr << "Could not record microphone test: " << error.what() << "\n";
+            return 1;
+        }
+        return 0;
+    }
+#endif
     if (argc == 4 && std::string_view(argv[1]) == "process") {
         try {
             const auto original = clearmic::audio::read_pcm16_wav(argv[2]);
