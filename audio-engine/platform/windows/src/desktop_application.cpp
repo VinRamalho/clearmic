@@ -164,7 +164,7 @@ void update_device_status(Application& app) {
     if (index < 0) {
         SetWindowTextW(app.device_status, L"No active Windows microphone endpoint is available.");
         SetWindowTextW(app.battery_status, L"Battery: Not available");
-        SetWindowTextW(app.device_id, L"Backend: WASAPI · Device ID: Not available");
+        SetWindowTextW(app.device_id, L"Diagnostics · Backend: WASAPI · Device, format, and latency unavailable");
         return;
     }
     const auto& device = app.devices[static_cast<std::size_t>(index)];
@@ -194,7 +194,13 @@ void update_device_status(Application& app) {
     if (batteries.empty()) batteries = L"Battery: Not available";
     SetWindowTextW(app.battery_status, batteries.c_str());
     const auto id = to_wide(device.id);
-    const std::wstring diagnostic = L"Backend: WASAPI   Device ID: " + id;
+    std::wstring diagnostic = L"Diagnostics · Backend: WASAPI";
+    diagnostic += L" · Device ID: " + id;
+    diagnostic += L" · Mix format: ";
+    diagnostic += device.sample_rate_hz ? std::to_wstring(*device.sample_rate_hz) + L" Hz" : L"unavailable";
+    diagnostic += L" / ";
+    diagnostic += device.channels ? std::to_wstring(*device.channels) + L" channels" : L"channel count unavailable";
+    diagnostic += L" · Buffer/latency: not measured";
     SetWindowTextW(app.device_id, diagnostic.c_str());
 }
 
@@ -373,7 +379,7 @@ void initialize_controls(Application& app) {
     app.device_status = GetDlgItem(app.window, device_status_label);
     add_label(app, L"Battery: Not available", 24, 151, 680, 24, battery_status_label);
     app.battery_status = GetDlgItem(app.window, battery_status_label);
-    add_label(app, L"", 24, 174, 680, 34, device_id_label);
+    add_label(app, L"Diagnostics · WASAPI format and latency are available only when measured", 24, 174, 680, 34, device_id_label);
     app.device_id = GetDlgItem(app.window, device_id_label);
     add_control(app, L"BUTTON", L"Enable ClearMic enhancement", BS_AUTOCHECKBOX, 24, 208, 260, 26, enhancement_check);
     app.enhancement = GetDlgItem(app.window, enhancement_check);
