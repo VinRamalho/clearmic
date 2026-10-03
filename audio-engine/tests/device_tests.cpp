@@ -48,10 +48,15 @@ int main() {
     const auto first_fallback = preferred_input_device_index(available_inputs, "missing-microphone");
     if (!first_fallback || *first_fallback != 1) return 24;
     available_inputs[1].selectable = false;
+    available_inputs[2].selectable = false;
     const auto unavailable_fallback = preferred_input_device_index(available_inputs, "missing-microphone");
     const std::vector<AudioDevice> no_inputs;
     const auto empty_fallback = preferred_input_device_index(no_inputs, "missing-microphone");
-    if (unavailable_fallback.has_value() || empty_fallback.has_value()) return 25;
+    if (unavailable_fallback.has_value() || empty_fallback.has_value()) {
+        std::cerr << "Device fallback should be absent when no selectable input exists; available="
+                  << unavailable_fallback.has_value() << ", empty=" << empty_fallback.has_value() << '\n';
+        return 25;
+    }
     if (device.usb_vendor_id || device.usb_product_id) return 17;
     AudioDevice headset_function;
     headset_function.device_kind = "bluetooth-headset-function";
