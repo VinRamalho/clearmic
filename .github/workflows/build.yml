@@ -41,23 +41,28 @@ jobs:
           $installerLog = Join-Path $env:RUNNER_TEMP "clearmic-msi.log"
           $installer = Get-ChildItem -Path build/installer -Filter *.msi | Select-Object -First 1
           if (-not $installer) { throw "CPack did not produce a Windows MSI" }
+          Write-Output "Installing MSI: $($installer.FullName)"
           & msiexec.exe /i $installer.FullName /qn /norestart /l*v $installerLog
           $installExitCode = $LASTEXITCODE
-          if ($installExitCode -ne 0) {
-            Get-Content $installerLog -Tail 80
+          if ($installExitCode -notin @(0, 3010)) {
+            Get-Content $installerLog
             throw "MSI installation failed with exit code $installExitCode"
           }
+          Write-Output "MSI installation completed with exit code $installExitCode"
           $registryPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
           $product = Get-ChildItem $registryPath | Get-ItemProperty | Where-Object DisplayName -Like "*ClearMic*" | Select-Object -First 1
           if (-not $product) { throw "Windows Installer did not register ClearMic" }
           $installRoot = $product.InstallLocation
           if (-not $installRoot) { $installRoot = Join-Path $env:ProgramFiles "ClearMic" }
           Write-Output "ClearMic install location: $installRoot"
+          if (-not (Test-Path -LiteralPath $installRoot)) { throw "MSI install location does not exist: $installRoot" }
           $installedFiles = Get-ChildItem -LiteralPath $installRoot -File -Recurse
+          Write-Output "Installed files: $($installedFiles.FullName -join ', ')"
           if (-not ($installedFiles.Name -contains "clearmic-desktop.exe")) { throw "Installed desktop application was not found" }
           if (-not ($installedFiles.Name -contains "clearmic-cli.exe")) { throw "Installed CLI was not found" }
           $desktopExecutable = $installedFiles | Where-Object Name -eq "clearmic-desktop.exe" | Select-Object -First 1
           $desktopProcess = Start-Process -FilePath $desktopExecutable.FullName -PassThru
+          Write-Output "Launched installed desktop application with PID $($desktopProcess.Id)"
           Start-Sleep -Seconds 2
           $desktopProcess.Refresh()
           if ($desktopProcess.HasExited) { throw "Installed desktop application exited during startup" }
@@ -68,10 +73,11 @@ jobs:
           }
           & msiexec.exe /x $installer.FullName /qn /norestart /l*v $installerLog
           $removeExitCode = $LASTEXITCODE
-          if ($removeExitCode -ne 0) {
-            Get-Content $installerLog -Tail 80
+          if ($removeExitCode -notin @(0, 3010)) {
+            Get-Content $installerLog
             throw "MSI removal failed with exit code $removeExitCode"
           }
+          Write-Output "MSI removal completed with exit code $removeExitCode"
           $remainingFiles = Get-ChildItem -LiteralPath $installRoot -File -Recurse -ErrorAction SilentlyContinue
           if ($remainingFiles.Name -contains "clearmic-desktop.exe") { throw "MSI removal left the desktop application installed" }
       - name: Preserve MSI installation diagnostics
