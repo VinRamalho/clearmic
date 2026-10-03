@@ -29,7 +29,8 @@
 
 - Windows reports a connected composite USB device with bus description `Wireless Device`, VID `3151`, PID `3020`, revision `0002`.
 - It exposes `MI_00` and `MI_01` interfaces. PnP classifies both as HID interfaces; no USB Audio interface or corresponding microphone endpoint is currently visible.
-- The MI_01 HID child list includes consumer-control, system-control, mouse, and vendor-defined usage page `0xFF00`, usage `0x000E`.
-- The raw HID report descriptor and feature reports have not yet been decoded or queried. Battery availability therefore remains **unknown**; no telemetry is shown or inferred.
+- PnP shows an active composite receiver (`USB\\VID_3151&PID_3020`, revision `0002`) with `MI_00` and `MI_01`; the `MI_01` children include mouse (`UP:0001/U:0002`), consumer control (`UP:000C/U:0001`), and vendor-defined (`UP:FF00/U:000E`) HID collections. They share container `{999EC788-C3EC-5F0C-B470-BA9DC2EEC329}`.
+- The collections have no PnP problem code, and Windows exposes only generic `DEVPKEY_Device_PowerData`; that is OS power-management metadata, not a device battery percentage or charging report.
+- The raw HID report descriptor and input/feature reports have not yet been queried or decoded. Transmitter and receiver battery availability therefore remain **unknown**; no telemetry is shown or inferred.
 
 Battery and transmitter/receiver values for the WF-C710N and USB wireless device remain unknown. The current inventory is passive PnP evidence only; Sony headset capture, charging status, USB HID battery report decoding, and virtual-microphone routing have not been tested with actual sound or an application consumer.
