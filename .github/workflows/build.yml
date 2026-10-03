@@ -42,10 +42,14 @@ jobs:
           $installer = Get-ChildItem -Path build/installer -Filter *.msi | Select-Object -First 1
           if (-not $installer) { throw "CPack did not produce a Windows MSI" }
           Write-Output "Installing MSI: $($installer.FullName)"
-          & msiexec.exe /i $installer.FullName /qn /norestart /l*v $installerLog
-          $installExitCode = $LASTEXITCODE
+          $installProcess = Start-Process -FilePath "$env:WINDIR\System32\msiexec.exe" `
+            -ArgumentList @("/i", "`"$($installer.FullName)`"", "/qn", "/norestart", "/l*v", "`"$installerLog`"") `
+            -Wait -PassThru
+          $installExitCode = $installProcess.ExitCode
+          Write-Output "MSI installation process exited with code $installExitCode"
           if ($installExitCode -notin @(0, 3010)) {
-            Get-Content $installerLog
+            if (Test-Path -LiteralPath $installerLog) { Get-Content $installerLog }
+            else { Write-Output "MSI log was not created at $installerLog" }
             throw "MSI installation failed with exit code $installExitCode"
           }
           Write-Output "MSI installation completed with exit code $installExitCode"
@@ -71,10 +75,14 @@ jobs:
             Stop-Process -Id $desktopProcess.Id -Force
             throw "Installed desktop application did not close after a window-close request"
           }
-          & msiexec.exe /x $installer.FullName /qn /norestart /l*v $installerLog
-          $removeExitCode = $LASTEXITCODE
+          $removeProcess = Start-Process -FilePath "$env:WINDIR\System32\msiexec.exe" `
+            -ArgumentList @("/x", "`"$($installer.FullName)`"", "/qn", "/norestart", "/l*v", "`"$installerLog`"") `
+            -Wait -PassThru
+          $removeExitCode = $removeProcess.ExitCode
+          Write-Output "MSI removal process exited with code $removeExitCode"
           if ($removeExitCode -notin @(0, 3010)) {
-            Get-Content $installerLog
+            if (Test-Path -LiteralPath $installerLog) { Get-Content $installerLog }
+            else { Write-Output "MSI log was not created at $installerLog" }
             throw "MSI removal failed with exit code $removeExitCode"
           }
           Write-Output "MSI removal completed with exit code $removeExitCode"
