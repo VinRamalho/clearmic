@@ -117,7 +117,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Linux development dependencies
-        run: sudo apt-get update && sudo apt-get install --yes libpipewire-0.3-dev libgtk-3-dev libgstreamer1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good pkg-config python3-xlib xdotool xvfb
+        run: sudo apt-get update && sudo apt-get install --yes libpipewire-0.3-dev libgtk-3-dev libgstreamer1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good pkg-config python3-xlib xdotool xvfb desktop-file-utils
       - name: Configure
         run: cmake -S . -B build -G Ninja
       - name: Build
@@ -147,6 +147,36 @@ jobs:
           '
       - name: Build Ubuntu CLI package
         run: bash packaging/linux/build-deb.sh
+      - name: Install Ubuntu package and launch its desktop entry
+        shell: bash
+        run: |
+          deb_file=$(find build/linux-package/dist -maxdepth 1 -type f -name '*.deb' -print -quit)
+          if [[ -z "$deb_file" ]]; then
+            echo "Ubuntu package was not produced" >&2
+            exit 1
+          fi
+          sudo apt-get install --yes "$deb_file"
+          dpkg-query --show --showformat='${Status}\n' clearmic | grep -Fx 'install ok installed'
+          desktop-file-validate /usr/share/applications/clearmic-cli.desktop
+          timeout --signal=TERM 10s xvfb-run -a bash -euo pipefail -c '
+            gtk-launch clearmic-cli &
+            app_pid=$!
+            window_id=""
+            for _ in $(seq 1 30); do
+              window_id=$(xdotool search --onlyvisible --name "^ClearMic$" 2>/dev/null | head -n 1 || true)
+              if [ -n "$window_id" ]; then break; fi
+              sleep 0.1
+            done
+            if [ -z "$window_id" ]; then
+              echo "Installed ClearMic desktop entry did not open a window" >&2
+              kill "$app_pid" 2>/dev/null || true
+              wait "$app_pid" || true
+              exit 1
+            fi
+            echo "Installed ClearMic launcher opened window: $window_id"
+            /usr/bin/python3 -c "import sys; from Xlib import X, display, protocol; d=display.Display(); w=d.create_resource_object(\"window\", int(sys.argv[1])); atom=d.intern_atom(\"WM_DELETE_WINDOW\"); wm_protocols=d.intern_atom(\"WM_PROTOCOLS\"); assert atom in w.get_wm_protocols(), \"Window does not advertise WM_DELETE_WINDOW\"; event=protocol.event.ClientMessage(window=w, client_type=wm_protocols, data=(32, [atom, X.CurrentTime, 0, 0, 0])); w.send_event(event, event_mask=0, propagate=False); d.flush()" "$window_id"
+            wait "$app_pid"
+          '
       - name: Preserve Ubuntu package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
