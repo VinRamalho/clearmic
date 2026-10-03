@@ -26,7 +26,7 @@ void print_usage() {
                  "  clearmic-cli record-test <seconds> <original.wav> <processed.wav> [device-id]\n"
 #endif
 #ifdef __linux__
-                 "  clearmic-cli serve [device-id] [natural|meeting|strong]\n"
+                 "  clearmic-cli serve [device-id] [natural|meeting|strong] [--noise-suppression=on|off] [--noise-gate=on|off] [--automatic-gain=on|off] [--compressor=on|off]\n"
                  "  clearmic-cli gui\n"
 #endif
                  ;
@@ -37,22 +37,41 @@ int main(const int argc, char** argv) {
 #ifdef __linux__
     if (argc == 2 && std::string_view(argv[1]) == "gui")
         return clearmic::platform::pipewire::run_desktop_application(argv[0]);
-    if (argc >= 2 && argc <= 4 && std::string_view(argv[1]) == "serve") {
+    if (argc >= 2 && argc <= 8 && std::string_view(argv[1]) == "serve") {
         try {
             std::string device_id;
             clearmic::audio::Preset preset = clearmic::audio::Preset::natural;
-            auto parse_preset = [&](const std::string_view name) {
-                if (name == "natural") preset = clearmic::audio::Preset::natural;
-                else if (name == "meeting") preset = clearmic::audio::Preset::meeting;
-                else if (name == "strong") preset = clearmic::audio::Preset::strong_noise_reduction;
-                else return false;
-                return true;
-            };
-            if (argc >= 3) {
-                if (!parse_preset(argv[2])) device_id = argv[2];
+            bool preset_selected = false;
+            auto settings = clearmic::audio::settings_for_preset(preset);
+            for (int index = 2; index < argc; ++index) {
+                const std::string_view argument(argv[index]);
+                if (argument == "natural" || argument == "meeting" || argument == "strong") {
+                    if (preset_selected) throw std::invalid_argument("Specify one DSP preset");
+                    preset = argument == "natural" ? clearmic::audio::Preset::natural
+                        : (argument == "meeting" ? clearmic::audio::Preset::meeting
+                                                   : clearmic::audio::Preset::strong_noise_reduction);
+                    settings = clearmic::audio::settings_for_preset(preset);
+                    preset_selected = true;
+                    continue;
+                }
+                auto set_toggle = [&](const std::string_view name, bool& value) {
+                    const std::string prefix = std::string(name) + "=";
+                    if (!argument.starts_with(prefix)) return false;
+                    const auto enabled = argument.substr(prefix.size());
+                    if (enabled != "on" && enabled != "off")
+                        throw std::invalid_argument("Processing switches must use on or off");
+                    value = enabled == "on";
+                    return true;
+                };
+                if (set_toggle("--noise-suppression", settings.noise_suppression_enabled) ||
+                    set_toggle("--noise-gate", settings.noise_gate_enabled) ||
+                    set_toggle("--automatic-gain", settings.automatic_gain_enabled) ||
+                    set_toggle("--compressor", settings.compressor_enabled)) continue;
+                if (argument.starts_with("--")) throw std::invalid_argument("Unknown processing option: " + std::string(argument));
+                if (!device_id.empty()) throw std::invalid_argument("Specify one microphone device ID");
+                device_id = argument;
             }
-            if (argc == 4 && !parse_preset(argv[3])) throw std::invalid_argument("Unknown DSP preset; choose natural, meeting, or strong");
-            clearmic::platform::pipewire::run_realtime_microphone(device_id, preset);
+            clearmic::platform::pipewire::run_realtime_microphone(device_id, settings);
         } catch (const std::exception& error) {
             std::cerr << "ClearMic audio service stopped: " << error.what() << "\n";
             return 1;

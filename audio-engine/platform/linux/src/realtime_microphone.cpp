@@ -241,7 +241,7 @@ void connect_audio(pw_stream* stream, const pw_direction direction, const char* 
 }
 }
 
-void run_realtime_microphone(const std::string& device_id, const audio::Preset preset) {
+void run_realtime_microphone(const std::string& device_id, const audio::ProcessingSettings settings) {
     DeviceManager devices;
     const auto available = devices.input_devices();
     if (available.empty()) throw std::runtime_error("PipeWire has no microphone source to capture");
@@ -253,7 +253,7 @@ void run_realtime_microphone(const std::string& device_id, const audio::Preset p
     runtime.loop = pw_main_loop_new(nullptr);
     if (!runtime.loop) throw std::runtime_error("Could not create PipeWire main loop");
     runtime.session.loop = runtime.loop;
-    runtime.session.processor.set_settings(audio::settings_for_preset(preset));
+    runtime.session.processor.set_settings(settings);
     runtime.context = pw_context_new(pw_main_loop_get_loop(runtime.loop), nullptr, 0);
     if (!runtime.context) throw std::runtime_error("Could not create PipeWire context");
     runtime.core = pw_context_connect(runtime.context, nullptr, 0);
