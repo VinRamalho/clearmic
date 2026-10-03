@@ -424,7 +424,17 @@ void refresh_devices(Application& app) {
         ++row;
     }
     const int active_row = preferred_row >= 0 ? preferred_row : (default_row >= 0 ? default_row : (row > 0 ? 0 : -1));
-    if (active_row >= 0) SendMessageW(app.microphone, CB_SETCURSEL, static_cast<WPARAM>(active_row), 0);
+    if (active_row >= 0) {
+        SendMessageW(app.microphone, CB_SETCURSEL, static_cast<WPARAM>(active_row), 0);
+        if (preferred_row < 0) {
+            const LRESULT index = SendMessageW(app.microphone, CB_GETITEMDATA,
+                                                static_cast<WPARAM>(active_row), 0);
+            if (index >= 0 && static_cast<std::size_t>(index) < app.devices.size()) {
+                const auto id = to_wide(app.devices[static_cast<std::size_t>(index)].id);
+                write_setting(app, L"audio", L"input-device", id.c_str());
+            }
+        }
+    }
 
     SendMessageW(app.render_output, CB_RESETCONTENT, 0, 0);
     SendMessageW(app.render_output, CB_ADDSTRING, 0,

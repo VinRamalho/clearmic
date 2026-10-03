@@ -282,7 +282,10 @@ void refresh_devices(Application& app) {
     app.inputs = std::move(selectable);
     const int active = preferred_index >= 0 ? preferred_index
         : (default_index >= 0 ? default_index : (app.inputs.empty() ? -1 : 0));
-    if (active >= 0) gtk_combo_box_set_active(GTK_COMBO_BOX(app.devices), active);
+    if (active >= 0) {
+        gtk_combo_box_set_active(GTK_COMBO_BOX(app.devices), active);
+        if (preferred_index < 0) save_device_id(app.inputs[static_cast<std::size_t>(active)].id);
+    }
     update_device_status(app);
     update_controls(app);
     app.refreshing_devices = false;
