@@ -162,3 +162,43 @@ jobs:
           name: clearmic-ubuntu-build-log
           path: build.log
           retention-days: 3
+
+  draft-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, ubuntu]
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify tag matches project version
+        run: |
+          project_version=$(sed -n 's/^project(ClearMic VERSION \([^ ]*\).*/\1/p' CMakeLists.txt)
+          if [[ "$GITHUB_REF_NAME" != "v$project_version" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match project version v$project_version" >&2
+            exit 1
+          fi
+      - name: Download Windows installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p release/windows release/ubuntu
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name clearmic-windows-msi --dir release/windows
+      - name: Download Ubuntu package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name clearmic-ubuntu-amd64-deb --dir release/ubuntu
+      - name: Create draft release with checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mapfile -d '' msi_files < <(find release/windows -type f -name '*.msi' -print0)
+          mapfile -d '' deb_files < <(find release/ubuntu -type f -name '*.deb' -print0)
+          if [[ "${#msi_files[@]}" -ne 1 || "${#deb_files[@]}" -ne 1 ]]; then
+            echo "Expected exactly one MSI and one Ubuntu .deb package" >&2
+            exit 1
+          fi
+          sha256sum "${msi_files[0]}" "${deb_files[0]}" > release/SHA256SUMS.txt
+          gh release create "$GITHUB_REF_NAME" "${msi_files[0]}" "${deb_files[0]}" release/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" --title "ClearMic $GITHUB_REF_NAME" --generate-notes --draft

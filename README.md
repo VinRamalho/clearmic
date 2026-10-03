@@ -293,6 +293,7 @@ Linux uses a GTK 3 desktop panel and Windows uses a native Win32 panel. Windows 
 - [Battery monitoring](docs/battery-monitoring.md)
 - [Virtual microphone](docs/virtual-microphone.md)
 - [Hardware compatibility](docs/hardware-compatibility.md)
+- [Release artifacts](docs/releasing.md)
 
 ---
 
