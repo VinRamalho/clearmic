@@ -42,8 +42,14 @@ struct Application {
     guint device_refresh_source{};
     std::string original_path;
     std::string processed_path;
+    std::string active_device_id;
     bool refreshing_devices{};
     bool updating_preferences{};
+    bool reconnect_enabled{};
+    bool closing{};
+    bool user_stopping{};
+    unsigned int restart_attempt{};
+    guint restart_source{};
 };
 
 std::string settings_path() {
@@ -164,16 +170,18 @@ void update_device_status(Application& app) {
 
 void update_controls(Application& app) {
     const bool running = app.service != nullptr;
-    gtk_widget_set_sensitive(app.start_button, !running && app.test_capture == nullptr && selected_index(app) >= 0);
-    gtk_widget_set_sensitive(app.stop_button, running);
-    gtk_widget_set_sensitive(app.devices, !running && app.test_capture == nullptr);
-    gtk_widget_set_sensitive(app.refresh_button, !running && app.test_capture == nullptr);
-    gtk_widget_set_sensitive(app.preset, !running && app.test_capture == nullptr);
-    gtk_widget_set_sensitive(app.noise_suppression, !running && app.test_capture == nullptr);
-    gtk_widget_set_sensitive(app.noise_gate, !running && app.test_capture == nullptr);
-    gtk_widget_set_sensitive(app.automatic_gain, !running && app.test_capture == nullptr);
-    gtk_widget_set_sensitive(app.compressor, !running && app.test_capture == nullptr);
-    gtk_widget_set_sensitive(app.record_button, !running && app.test_capture == nullptr && selected_index(app) >= 0);
+    const bool service_active = running || app.restart_source != 0;
+    gtk_widget_set_sensitive(app.start_button, !service_active && app.test_capture == nullptr && selected_index(app) >= 0);
+    gtk_widget_set_sensitive(app.stop_button, service_active);
+    gtk_button_set_label(GTK_BUTTON(app.stop_button), app.restart_source ? "Cancel reconnect" : "Stop");
+    gtk_widget_set_sensitive(app.devices, !service_active && app.test_capture == nullptr);
+    gtk_widget_set_sensitive(app.refresh_button, !service_active && app.test_capture == nullptr);
+    gtk_widget_set_sensitive(app.preset, !service_active && app.test_capture == nullptr);
+    gtk_widget_set_sensitive(app.noise_suppression, !service_active && app.test_capture == nullptr);
+    gtk_widget_set_sensitive(app.noise_gate, !service_active && app.test_capture == nullptr);
+    gtk_widget_set_sensitive(app.automatic_gain, !service_active && app.test_capture == nullptr);
+    gtk_widget_set_sensitive(app.compressor, !service_active && app.test_capture == nullptr);
+    gtk_widget_set_sensitive(app.record_button, !service_active && app.test_capture == nullptr && selected_index(app) >= 0);
     gtk_widget_set_sensitive(app.play_original_button, app.player && app.test_capture == nullptr && !app.original_path.empty());
     gtk_widget_set_sensitive(app.play_processed_button, app.player && app.test_capture == nullptr && !app.processed_path.empty());
     gtk_widget_set_sensitive(app.stop_playback_button, app.player != nullptr);
@@ -395,16 +403,12 @@ void read_service_output(GObject* source, GAsyncResult* result, gpointer user_da
     if (error) g_error_free(error);
 }
 
-void on_start(GtkButton*, gpointer data) {
-    auto& app = *static_cast<Application*>(data);
-    const int index = selected_index(app);
-    if (index < 0) return;
-    const auto& id = app.inputs[static_cast<std::size_t>(index)].id;
+void launch_service(Application& app) {
     const int preset_index = std::clamp(gtk_combo_box_get_active(GTK_COMBO_BOX(app.preset)), 0, 2);
     const char* presets[] = {"natural", "meeting", "strong"};
     GError* error = nullptr;
     const gchar* arguments[] = {
-        app.executable, "serve", id.c_str(), presets[preset_index],
+        app.executable, "serve", app.active_device_id.c_str(), presets[preset_index],
         gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(app.noise_suppression)) ? "--noise-suppression=on" : "--noise-suppression=off",
         gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(app.noise_gate)) ? "--noise-gate=on" : "--noise-gate=off",
         gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(app.automatic_gain)) ? "--automatic-gain=on" : "--automatic-gain=off",
@@ -414,6 +418,8 @@ void on_start(GtkButton*, gpointer data) {
     if (!app.service) {
         gtk_label_set_text(GTK_LABEL(app.service_status), error ? error->message : "Could not start audio service.");
         if (error) g_error_free(error);
+        app.reconnect_enabled = false;
+        update_controls(app);
         return;
     }
     gtk_label_set_text(GTK_LABEL(app.service_status), "Starting ClearMic virtual microphone…");
@@ -428,30 +434,70 @@ void on_start(GtkButton*, gpointer data) {
         [](GObject* source, GAsyncResult* result, gpointer user_data) {
             auto& state = *static_cast<Application*>(user_data);
             GError* wait_error = nullptr;
-            if (!g_subprocess_wait_check_finish(G_SUBPROCESS(source), result, &wait_error)) {
-                gtk_label_set_text(GTK_LABEL(state.service_status), wait_error ? wait_error->message : "Audio service stopped with an error.");
-                if (wait_error) g_error_free(wait_error);
-            } else {
-                gtk_label_set_text(GTK_LABEL(state.service_status), "Audio service stopped.");
-            }
+            const bool exited_cleanly = g_subprocess_wait_check_finish(G_SUBPROCESS(source), result, &wait_error);
             if (state.output_cancel) g_cancellable_cancel(state.output_cancel);
             g_clear_object(&state.service_output);
             g_clear_object(&state.output_cancel);
             g_clear_object(&state.service);
-            gtk_widget_set_sensitive(state.devices, TRUE);
             refresh_devices(state);
+            if (!exited_cleanly && state.reconnect_enabled && !state.closing) {
+                if (wait_error) g_error_free(wait_error);
+                const unsigned int delay = std::min(2U << std::min(state.restart_attempt, 4U), 30U);
+                ++state.restart_attempt;
+                gchar* message = g_strdup_printf("Audio service stopped. Retrying in %u seconds…", delay);
+                gtk_label_set_text(GTK_LABEL(state.service_status), message);
+                g_free(message);
+                state.restart_source = g_timeout_add_seconds(delay,
+                    [](gpointer retry_data) -> gboolean {
+                        auto& retry = *static_cast<Application*>(retry_data);
+                        retry.restart_source = 0;
+                        if (retry.reconnect_enabled && !retry.closing) launch_service(retry);
+                        update_controls(retry);
+                        return G_SOURCE_REMOVE;
+                    }, &state);
+            } else {
+                gtk_label_set_text(GTK_LABEL(state.service_status), state.user_stopping || exited_cleanly
+                    ? "Audio service stopped."
+                    : (wait_error ? wait_error->message : "Audio service stopped with an error."));
+                if (wait_error) g_error_free(wait_error);
+            }
+            update_controls(state);
         }, &app);
+}
+
+void on_start(GtkButton*, gpointer data) {
+    auto& app = *static_cast<Application*>(data);
+    const int index = selected_index(app);
+    if (index < 0) return;
+    app.active_device_id = app.inputs[static_cast<std::size_t>(index)].id;
+    app.reconnect_enabled = true;
+    app.user_stopping = false;
+    app.restart_attempt = 0;
+    launch_service(app);
 }
 
 void on_stop(GtkButton*, gpointer data) {
     auto& app = *static_cast<Application*>(data);
-    if (!app.service) return;
-    g_subprocess_send_signal(app.service, SIGTERM);
-    gtk_label_set_text(GTK_LABEL(app.service_status), "Stopping audio service…");
+    app.reconnect_enabled = false;
+    app.user_stopping = true;
+    app.restart_attempt = 0;
+    if (app.restart_source) {
+        g_source_remove(app.restart_source);
+        app.restart_source = 0;
+        gtk_label_set_text(GTK_LABEL(app.service_status), "Automatic reconnect cancelled.");
+    } else if (app.service) {
+        g_subprocess_send_signal(app.service, SIGTERM);
+        gtk_label_set_text(GTK_LABEL(app.service_status), "Stopping audio service…");
+    }
+    update_controls(app);
 }
 
 void on_window_destroy(GtkWidget*, gpointer data) {
     auto& app = *static_cast<Application*>(data);
+    app.closing = true;
+    app.reconnect_enabled = false;
+    app.user_stopping = true;
+    if (app.restart_source) g_source_remove(app.restart_source);
     if (app.service) {
         if (app.output_cancel) g_cancellable_cancel(app.output_cancel);
         g_subprocess_send_signal(app.service, SIGTERM);
