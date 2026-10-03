@@ -47,6 +47,7 @@ constexpr int device_id_label = 118;
 constexpr int enhancement_check = 119;
 constexpr int render_output_combo = 120;
 constexpr int live_route_button = 121;
+constexpr int virtual_cable_help_button = 122;
 constexpr UINT live_route_complete_message = WM_APP + 2;
 constexpr UINT live_route_started_message = WM_APP + 3;
 constexpr UINT tray_callback_message = WM_APP + 4;
@@ -90,6 +91,7 @@ struct Application {
     HWND enhancement{};
     HWND render_output{};
     HWND live_route{};
+    HWND virtual_cable_help{};
     std::vector<audio::AudioDevice> devices;
     std::vector<audio::AudioDevice> render_devices;
     std::wstring settings_file;
@@ -335,6 +337,8 @@ void update_controls(Application& app) {
     const bool has_virtual_output = render_index >= 0 &&
         is_virtual_cable_output(app.render_devices[static_cast<std::size_t>(render_index)]);
     const bool idle = !app.recording && !app.live_routing;
+    const bool has_virtual_cable = std::any_of(app.render_devices.begin(), app.render_devices.end(),
+        [](const auto& device) { return is_virtual_cable_output(device); });
     EnableWindow(app.record, has_device && idle);
     EnableWindow(app.microphone, idle);
     EnableWindow(app.render_output, idle);
@@ -350,6 +354,7 @@ void update_controls(Application& app) {
     SetWindowTextW(app.live_route, app.live_routing ? L"Stop live routing" : L"Start live routing");
     EnableWindow(app.live_route, has_device && (app.live_routing ||
         (!app.recording && has_virtual_output)));
+    EnableWindow(app.virtual_cable_help, idle && !has_virtual_cable);
 }
 
 void refresh_devices(Application& app) {
@@ -408,8 +413,8 @@ void refresh_devices(Application& app) {
                  static_cast<WPARAM>(preferred_render_row >= 0 ? preferred_render_row : 0), 0);
     app.refreshing_devices = false;
     SetWindowTextW(app.enhancement_status, virtual_output_count > 0
-        ? L"Virtual cable detected. Select it to send processed audio to its paired microphone endpoint."
-        : L"No recognized virtual cable playback endpoint. Install a compatible cable to use ClearMic as a microphone.");
+        ? L"Virtual cable detected. Select it here; voice apps use its paired microphone endpoint."
+        : L"No cable. VB-CABLE is VB-Audio donationware; setup needs admin rights and a Windows restart.");
     update_device_status(app);
     update_controls(app);
 }
@@ -622,9 +627,12 @@ void initialize_controls(Application& app) {
     add_label(app, L"Diagnostics · WASAPI format and latency are available only when measured", 24, 174, 680, 34, device_id_label);
     app.device_id = GetDlgItem(app.window, device_id_label);
     add_label(app, L"Processed output device", 24, 210, 240);
-    add_control(app, L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, 24, 232, 680, 240,
+    add_control(app, L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, 24, 232, 500, 240,
                 render_output_combo, WS_EX_CLIENTEDGE);
     app.render_output = GetDlgItem(app.window, render_output_combo);
+    add_control(app, L"BUTTON", L"Download VB-CABLE", BS_PUSHBUTTON, 540, 232, 164, 30,
+                virtual_cable_help_button);
+    app.virtual_cable_help = GetDlgItem(app.window, virtual_cable_help_button);
     add_control(app, L"BUTTON", L"Start live routing", BS_PUSHBUTTON, 24, 270, 180, 34, live_route_button);
     app.live_route = GetDlgItem(app.window, live_route_button);
     add_label(app, L"Requires a virtual cable driver. Choose its playback endpoint; voice apps use its paired microphone.",
@@ -746,6 +754,12 @@ LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPAR
                     write_setting(*app, L"audio", L"render-device", id.c_str());
                 } else write_setting(*app, L"audio", L"render-device", L"");
                 update_controls(*app);
+            }
+            return 0;
+        case virtual_cable_help_button:
+            if (reinterpret_cast<INT_PTR>(ShellExecuteW(window, L"open", L"https://vb-audio.com/Cable/",
+                                                        nullptr, nullptr, SW_SHOWNORMAL)) <= 32) {
+                SetWindowTextW(app->status, L"Open https://vb-audio.com/Cable/ to download the official VB-CABLE driver.");
             }
             return 0;
         case preset_combo:
