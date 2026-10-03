@@ -99,7 +99,9 @@ int main(const int argc, char** argv) {
         if (devices.empty()) { std::cout << "No input devices found.\n"; return 0; }
         std::cout << "ClearMic input devices\n";
         for (const auto& device : devices) {
-            std::cout << (device.is_default ? "* " : "  ") << device.name << "\n    ID: " << device.id << "\n";
+            std::cout << (device.is_default ? "* " : "  ") << device.name << "\n    ID: " << device.id
+                      << "\n    Kind: " << device.device_kind
+                      << "\n    Selectable: " << (device.selectable ? "yes" : "no") << "\n";
             if (device.sample_rate_hz) std::cout << "    Sample rate: " << *device.sample_rate_hz << " Hz\n";
             if (device.channels) std::cout << "    Channels: " << *device.channels << "\n";
         }

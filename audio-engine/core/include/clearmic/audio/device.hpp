@@ -29,6 +29,8 @@ struct AudioDevice {
     std::optional<std::uint32_t> sample_rate_hz;
     std::optional<std::uint32_t> channels;
     DeviceCapabilities capabilities;
+    std::string device_kind{"microphone"};
+    bool selectable{true};
 };
 
 class IAudioDeviceManager {

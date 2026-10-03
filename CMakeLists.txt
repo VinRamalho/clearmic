@@ -102,7 +102,7 @@ if(WIN32)
     add_library(clearmic_platform audio-engine/platform/windows/src/device_manager.cpp
         audio-engine/platform/windows/src/live_capture.cpp)
     target_include_directories(clearmic_platform PUBLIC audio-engine/platform/windows/include)
-    target_link_libraries(clearmic_platform PUBLIC clearmic_core ole32 uuid)
+    target_link_libraries(clearmic_platform PUBLIC clearmic_core ole32 uuid setupapi cfgmgr32)
     target_compile_definitions(clearmic_platform PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 elseif(UNIX AND NOT APPLE)
     find_package(PkgConfig REQUIRED)
