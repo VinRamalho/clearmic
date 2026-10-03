@@ -10,7 +10,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Configure
-        run: cmake -S . -B build -A x64 -DCMAKE_CXX_FLAGS=-DGITHUB_ACTIONS -DCMAKE_C_FLAGS=-DGITHUB_ACTIONS -DCMAKE_CXX_COMPILER_FRONTEND_VARIANT=GNU
+        run: cmake -S . -B build -A x64 -DCMAKE_CXX_FLAGS=/DGITHUB_ACTIONS -DCMAKE_C_FLAGS=/DGITHUB_ACTIONS
       - name: Build
         run: |
           cmake --build build --config Release --verbose *> build.log
