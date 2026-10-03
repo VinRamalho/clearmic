@@ -28,6 +28,7 @@ struct Application {
     GtkWidget* play_original_button{};
     GtkWidget* play_processed_button{};
     GtkWidget* stop_playback_button{};
+    GtkWidget* background_toggle{};
     GtkWidget* noise_suppression{};
     GtkWidget* noise_gate{};
     GtkWidget* automatic_gain{};
@@ -38,6 +39,7 @@ struct Application {
     GDataInputStream* service_output{};
     GCancellable* output_cancel{};
     GstElement* player{};
+    GtkStatusIcon* tray_icon{};
     guint player_bus_watch{};
     guint device_refresh_source{};
     std::string original_path;
@@ -87,6 +89,32 @@ std::string stored_preset() {
     g_free(value);
     g_key_file_unref(key_file);
     return result;
+}
+
+bool stored_background_mode() {
+    GKeyFile* key_file = g_key_file_new();
+    const auto path = settings_path();
+    GError* error = nullptr;
+    g_key_file_load_from_file(key_file, path.c_str(), G_KEY_FILE_NONE, nullptr);
+    const gboolean value = g_key_file_get_boolean(key_file, "ui", "background-on-close", &error);
+    const bool result = error ? false : value != FALSE;
+    if (error) g_error_free(error);
+    g_key_file_unref(key_file);
+    return result;
+}
+
+void save_background_mode(const bool enabled) {
+    GKeyFile* key_file = g_key_file_new();
+    const auto path = settings_path();
+    g_key_file_load_from_file(key_file, path.c_str(), G_KEY_FILE_NONE, nullptr);
+    g_key_file_set_boolean(key_file, "ui", "background-on-close", enabled);
+    gsize length = 0;
+    gchar* data = g_key_file_to_data(key_file, &length, nullptr);
+    if (data) {
+        g_file_set_contents(path.c_str(), data, static_cast<gssize>(length), nullptr);
+        g_free(data);
+    }
+    g_key_file_unref(key_file);
 }
 
 void save_device_id(const std::string& value) {
@@ -492,6 +520,62 @@ void on_stop(GtkButton*, gpointer data) {
     update_controls(app);
 }
 
+void show_window(Application& app) {
+    gtk_widget_show_all(app.window);
+    gtk_window_present(GTK_WINDOW(app.window));
+}
+
+void on_tray_activated(GtkStatusIcon*, gpointer data) {
+    show_window(*static_cast<Application*>(data));
+}
+
+void on_tray_show(GtkMenuItem*, gpointer data) {
+    show_window(*static_cast<Application*>(data));
+}
+
+void on_tray_stop(GtkMenuItem*, gpointer data) {
+    on_stop(nullptr, data);
+}
+
+void on_tray_quit(GtkMenuItem*, gpointer data) {
+    auto& app = *static_cast<Application*>(data);
+    gtk_widget_destroy(app.window);
+}
+
+void on_tray_popup(GtkStatusIcon* icon, guint button, guint activate_time, gpointer data) {
+    auto* menu = gtk_menu_new();
+    auto* show_item = gtk_menu_item_new_with_label("Open ClearMic");
+    auto* stop_item = gtk_menu_item_new_with_label("Stop enhancement");
+    auto* quit_item = gtk_menu_item_new_with_label("Quit ClearMic");
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), show_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), stop_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), quit_item);
+    g_signal_connect(show_item, "activate", G_CALLBACK(on_tray_show), data);
+    g_signal_connect(stop_item, "activate", G_CALLBACK(on_tray_stop), data);
+    g_signal_connect(quit_item, "activate", G_CALLBACK(on_tray_quit), data);
+    g_signal_connect(menu, "selection-done", G_CALLBACK(+[](GtkWidget* menu_widget, gpointer) {
+        gtk_widget_destroy(menu_widget);
+    }), nullptr);
+    gtk_widget_show_all(menu);
+    gtk_menu_popup(GTK_MENU(menu), nullptr, nullptr, gtk_status_icon_position_menu, icon, button, activate_time);
+}
+
+void on_background_mode_toggled(GtkToggleButton* button, gpointer data) {
+    auto& app = *static_cast<Application*>(data);
+    const bool enabled = gtk_toggle_button_get_active(button) != FALSE;
+    save_background_mode(enabled);
+    if (app.tray_icon) gtk_status_icon_set_visible(app.tray_icon, enabled);
+    if (enabled) gtk_label_set_text(GTK_LABEL(app.service_status), "Closing this window will keep ClearMic available in the system tray.");
+}
+
+gboolean on_window_delete(GtkWidget* window, GdkEvent*, gpointer data) {
+    auto& app = *static_cast<Application*>(data);
+    if (!gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(app.background_toggle))) return FALSE;
+    gtk_widget_hide(window);
+    gtk_label_set_text(GTK_LABEL(app.service_status), "ClearMic is running in the system tray. Use its menu to reopen or quit.");
+    return TRUE;
+}
+
 void on_window_destroy(GtkWidget*, gpointer data) {
     auto& app = *static_cast<Application*>(data);
     app.closing = true;
@@ -511,6 +595,8 @@ void on_window_destroy(GtkWidget*, gpointer data) {
     if (app.device_refresh_source) g_source_remove(app.device_refresh_source);
     if (app.player_bus_watch) g_source_remove(app.player_bus_watch);
     g_clear_object(&app.player);
+    if (app.tray_icon) gtk_status_icon_set_visible(app.tray_icon, FALSE);
+    g_clear_object(&app.tray_icon);
     g_clear_object(&app.service_output);
     g_clear_object(&app.output_cancel);
     g_clear_object(&app.service);
@@ -615,8 +701,11 @@ int run_desktop_application(const char* executable_path) {
     auto* note = make_label("Audio stays on this computer. Device selection is saved between launches.");
     gtk_label_set_line_wrap(GTK_LABEL(note), TRUE);
     gtk_box_pack_start(GTK_BOX(layout), note, FALSE, FALSE, 8);
+    app.background_toggle = gtk_check_button_new_with_label("Keep running in the system tray when this window closes");
+    gtk_box_pack_start(GTK_BOX(layout), app.background_toggle, FALSE, FALSE, 0);
 
     g_signal_connect(app.window, "destroy", G_CALLBACK(on_window_destroy), &app);
+    g_signal_connect(app.window, "delete-event", G_CALLBACK(on_window_delete), &app);
     g_signal_connect(app.devices, "changed", G_CALLBACK(on_device_changed), &app);
     g_signal_connect(app.preset, "changed", G_CALLBACK(on_preset_changed), &app);
     g_signal_connect(app.refresh_button, "clicked", G_CALLBACK(on_refresh), &app);
@@ -626,6 +715,7 @@ int run_desktop_application(const char* executable_path) {
     g_signal_connect(app.play_original_button, "clicked", G_CALLBACK(on_play_original), &app);
     g_signal_connect(app.play_processed_button, "clicked", G_CALLBACK(on_play_processed), &app);
     g_signal_connect(app.stop_playback_button, "clicked", G_CALLBACK(on_stop_playback), &app);
+    g_signal_connect(app.background_toggle, "toggled", G_CALLBACK(on_background_mode_toggled), &app);
     g_signal_connect(app.noise_suppression, "toggled", G_CALLBACK(on_processing_toggle), &app);
     g_signal_connect(app.noise_gate, "toggled", G_CALLBACK(on_processing_toggle), &app);
     g_signal_connect(app.automatic_gain, "toggled", G_CALLBACK(on_processing_toggle), &app);
@@ -637,6 +727,14 @@ int run_desktop_application(const char* executable_path) {
     } else {
         gtk_label_set_text(GTK_LABEL(app.service_status), "A/B playback is unavailable because GStreamer playbin could not load.");
     }
+    app.tray_icon = gtk_status_icon_new_from_icon_name("audio-input-microphone");
+    gtk_status_icon_set_title(app.tray_icon, "ClearMic");
+    gtk_status_icon_set_tooltip_text(app.tray_icon, "ClearMic microphone enhancement");
+    g_signal_connect(app.tray_icon, "activate", G_CALLBACK(on_tray_activated), &app);
+    g_signal_connect(app.tray_icon, "popup-menu", G_CALLBACK(on_tray_popup), &app);
+    const bool background_mode = stored_background_mode();
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(app.background_toggle), background_mode);
+    gtk_status_icon_set_visible(app.tray_icon, background_mode);
     const auto preset = stored_preset();
     const int preset_index = preset == "meeting" ? 1 : (preset == "strong" ? 2 : 0);
     const auto preset_settings = audio::settings_for_preset(static_cast<audio::Preset>(preset_index));
