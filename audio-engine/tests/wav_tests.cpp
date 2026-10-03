@@ -2,6 +2,7 @@
 #include "clearmic/audio/processing.hpp"
 #include "clearmic/audio/wav.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -64,6 +65,19 @@ void run_wav_tests() {
     require(changed, "RNNoise output unexpectedly matches every input sample");
     write_pcm16_wav(processed_path, processed);
     require(read_pcm16_wav(processed_path).samples == processed.samples, "Processed WAV could not be read back");
+
+    for (const auto sample_count : {std::size_t{137}, NoiseSuppressor::frame_samples,
+                                    NoiseSuppressor::frame_samples + 1}) {
+        const auto short_input = make_audio(48000, 1, sample_count);
+        const auto short_processed = suppress_noise(short_input);
+        require(short_processed.samples.size() == short_input.samples.size(),
+                "Short WAV processing changed the sample count");
+        if (sample_count == NoiseSuppressor::frame_samples) {
+            require(std::any_of(short_processed.samples.begin(), short_processed.samples.end(),
+                                [](const auto sample) { return sample != 0; }),
+                    "Single-frame WAV processing returned only startup silence");
+        }
+    }
 
     const auto stereo = make_audio(48000, 2, 991);
     const auto stereo_path = root / "stereo.wav";
