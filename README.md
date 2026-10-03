@@ -425,7 +425,7 @@ The eventual goal is to distribute ClearMic as a normal desktop application.
 
 ### Windows
 
-The Windows workflow builds a CPack/WiX MSI containing the desktop and CLI executables and verifies installation, installed files, desktop launch, and removal. The desktop can continuously process WASAPI microphone input and render it to a selected playback endpoint. To use that stream as a microphone, install a compatible virtual audio cable separately, select its playback endpoint in ClearMic, and select its paired recording endpoint in the voice application. The MSI does not include or install a virtual-audio driver; Windows virtual-microphone packaging and native compatibility validation remain open. A public release also needs a project license.
+The Windows workflow builds a CPack/WiX MSI containing the desktop and CLI executables and verifies installation, installed files, the RNNoise license notice, desktop launch, and removal. The Ubuntu `.deb` includes the same upstream license notice under `/usr/share/doc/clearmic/licenses/rnnoise/`. The desktop can continuously process WASAPI microphone input and render it to a selected playback endpoint. To use that stream as a microphone, install a compatible virtual audio cable separately, select its playback endpoint in ClearMic, and select its paired recording endpoint in the voice application. The MSI does not include or install a virtual-audio driver; Windows virtual-microphone packaging and native compatibility validation remain open. A public release also needs a project license.
 
 ### Ubuntu
 
