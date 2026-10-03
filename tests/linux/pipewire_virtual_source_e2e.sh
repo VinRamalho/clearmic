@@ -8,7 +8,7 @@ if [[ ! -x "$cli_path" ]]; then
     echo "ClearMic CLI executable not found: $cli_path" >&2
     exit 2
 fi
-for command in pipewire wireplumber pw-cli pw-cat timeout python3; do
+for command in pipewire wireplumber pw-cli pw-cat timeout python3 dbus-run-session; do
     if ! command -v "$command" >/dev/null; then
         echo "PipeWire integration test requires '$command'" >&2
         exit 2
@@ -52,7 +52,7 @@ export PIPEWIRE_REMOTE=pipewire-0
 export XDG_CONFIG_HOME="$tmp/xdg"
 pipewire -c "$tmp/pipewire.conf" >"$tmp/pipewire.log" 2>&1 &
 pipewire_pid=$!
-wireplumber >"$tmp/wireplumber.log" 2>&1 &
+dbus-run-session -- wireplumber >"$tmp/wireplumber.log" 2>&1 &
 wireplumber_pid=$!
 service_pid=""
 consumer_pid=""

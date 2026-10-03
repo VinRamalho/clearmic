@@ -48,4 +48,4 @@ The next Windows architecture milestone is to compare candidate driver implement
 
 ## Current status
 
-Linux's `serve` command publishes the PipeWire source and a repeatable isolated WSL test has captured non-silent audio through a `pw-cat` consumer after correcting the source callback scheduling. That synthetic 440 Hz test verifies transport, not speech enhancement or routing in a native desktop application. The Ubuntu CI run is still being checked because its `pw-cat` consumer did not form a graph link in the latest run. Windows still has no ClearMic virtual endpoint.
+Linux's `serve` command publishes the PipeWire source and a repeatable isolated WSL test has captured non-silent audio through a `pw-cat` consumer after correcting the source callback scheduling. That synthetic 440 Hz test verifies transport, not speech enhancement or routing in a native desktop application. Windows still has no ClearMic virtual endpoint.
