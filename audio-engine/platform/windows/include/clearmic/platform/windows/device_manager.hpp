@@ -5,6 +5,8 @@
 #include "clearmic/audio/processor_chain.hpp"
 
 #include <cstdint>
+#include <atomic>
+#include <functional>
 #include <optional>
 #include <string>
 
@@ -12,6 +14,7 @@ namespace clearmic::platform::windows {
 class DeviceManager final : public audio::IAudioDeviceManager {
 public:
     [[nodiscard]] std::vector<audio::AudioDevice> input_devices() override;
+    [[nodiscard]] std::vector<audio::AudioDevice> output_devices();
 };
 
 struct CaptureDiagnostics {
@@ -24,5 +27,8 @@ struct CaptureDiagnostics {
                                                              std::uint32_t duration_seconds,
                                                              audio::ProcessingSettings settings = {},
                                                              CaptureDiagnostics* diagnostics = nullptr);
+void run_live_processing(const std::string& input_device_id, const std::string& output_device_id,
+                         audio::ProcessingSettings settings, const std::atomic_bool& stop_requested,
+                         const std::function<void()>& on_started = {});
 int run_desktop_application();
 }

@@ -4,7 +4,7 @@
 
 ClearMic is an open-source, cross-platform desktop application designed to improve microphone voice quality in real time.
 
-> **Development status:** the C++20 device model, Windows WASAPI and Linux PipeWire input backends, shared stateful DSP chain, and CI builds for Windows and Ubuntu 24.04 are in place. Both platforms provide CLI `record-test` A/B capture. Linux has a GTK desktop panel to discover/select a PipeWire microphone, save the selection and processing options, start/stop the processed `ClearMic Virtual Microphone` service, record/play a five-second A/B comparison using the selected preset and controls, refresh microphone availability automatically while idle, retry the service after unexpected failures, and optionally keep running in the system tray. When streaming, the Linux panel shows live input and processed RMS meters. It exposes a master enhancement switch, noise suppression, noise gate, automatic gain, compressor, and input gain controls. Linux also reads a Bluetooth battery percentage from BlueZ when PipeWire supplies a matching Bluetooth address and BlueZ reports the value. Windows has a native desktop panel for WASAPI endpoint discovery, persistent processing controls, five-second A/B capture, and in-app playback. The CPack/WiX MSI now passes CI installation, launch, and removal checks. Windows real-time virtual-microphone routing, Windows and USB receiver battery telemetry, and native audio-quality validation remain incomplete. The Ubuntu `.deb` includes the GUI. This is an early development project, not a finished product.
+> **Development status:** the C++20 device model, Windows WASAPI and Linux PipeWire audio backends, shared stateful DSP chain, and CI builds for Windows and Ubuntu 24.04 are in place. Both platforms provide CLI `record-test` A/B capture. Linux has a GTK panel to discover/select a PipeWire microphone, persist settings, start/stop the `ClearMic Virtual Microphone` service, view live input/output RMS meters, record and compare samples, refresh devices while idle, recover from service failures, and optionally run in the system tray. Windows has a native panel for WASAPI input and playback endpoint selection, persistent processing controls, A/B capture/playback, and start/stop continuous processing into a selected playback endpoint. Using that stream as a microphone still requires a separately installed compatible virtual audio cable; the MSI does not install a driver, and native cable routing remains unverified. Linux reads Bluetooth battery percentages from BlueZ when available; Windows and the tested USB receiver do not currently provide battery telemetry. The CPack/WiX MSI passes CI installation, launch, and removal checks. Native audio quality and latency validation remain incomplete. The Ubuntu `.deb` includes the GUI. This is an early development project, not a finished product.
 
 It currently targets background noise and inconsistent microphone levels while preserving a natural-sounding voice. Acoustic echo cancellation and room reverberation reduction are not implemented.
 
@@ -106,7 +106,7 @@ The Linux service exposes processed audio as:
 ClearMic Virtual Microphone
 ```
 
-On Linux, applications such as Discord, Microsoft Teams, Google Meet, Zoom, OBS, browsers, games, and other voice applications can select the PipeWire source while the ClearMic service is running. Windows application routing remains future work.
+On Linux, applications such as Discord, Microsoft Teams, Google Meet, Zoom, OBS, browsers, games, and other voice applications can select the PipeWire source while the ClearMic service is running. On Windows, select a virtual cable's playback endpoint in ClearMic and its paired recording endpoint in the target application. ClearMic does not bundle that Windows driver; native endpoint pairing and audio delivery still need hardware validation.
 
 Echo cancellation requires a playback reference, and reverberation reduction is not implemented yet. The current live chain provides RNNoise suppression, input gain, gate, compressor, and automatic gain control; it does not claim to remove acoustic echo or room reverberation.
 
@@ -284,7 +284,7 @@ The current architecture targets:
 
 ### Desktop UI
 
-Linux uses a GTK 3 desktop panel and Windows uses a native Win32 panel. Windows continuous virtual-microphone routing remains under development.
+Linux uses a GTK 3 desktop panel and Windows uses a native Win32 panel. Windows can route live processed audio to an explicitly selected playback endpoint, with a separately installed virtual cable required to expose the audio as a microphone.
 
 ## 📚 Developer documentation
 
@@ -407,7 +407,7 @@ The native ClearMic desktop panel discovers active WASAPI microphones, remembers
 
 The supported development build uses CMake and Visual Studio / MSVC.
 
-`record-test` captures up to 30 seconds and writes original/processed WAV files. The recorded sample is converted to 48 kHz mono PCM and processed after capture ends. The Windows panel applies the selected Natural/Meeting/Strong profile and individual controls to its A/B capture. Input/output level bars show the last recorded sample; continuous real-time monitoring and a virtual-microphone endpoint are not implemented on Windows.
+`record-test` captures up to 30 seconds and writes original/processed WAV files. The recorded sample is converted to 48 kHz mono PCM and processed after capture ends. The Windows panel applies the selected Natural/Meeting/Strong profile and individual controls to its A/B capture. Input/output level bars show the last recorded sample. The Windows live route does not yet publish live meter values or provide its own virtual-microphone endpoint.
 
 Build from a Visual Studio Developer PowerShell with:
 
@@ -425,7 +425,7 @@ The eventual goal is to distribute ClearMic as a normal desktop application.
 
 ### Windows
 
-The Windows workflow builds a CPack/WiX MSI containing the desktop and CLI executables and verifies installation, installed files, desktop launch, and removal. A public release still needs a project license and a Windows virtual-microphone strategy.
+The Windows workflow builds a CPack/WiX MSI containing the desktop and CLI executables and verifies installation, installed files, desktop launch, and removal. The desktop can continuously process WASAPI microphone input and render it to a selected playback endpoint. To use that stream as a microphone, install a compatible virtual audio cable separately, select its playback endpoint in ClearMic, and select its paired recording endpoint in the voice application. The MSI does not include or install a virtual-audio driver; Windows virtual-microphone packaging and native compatibility validation remain open. A public release also needs a project license.
 
 ### Ubuntu
 
@@ -477,13 +477,13 @@ Build the Ubuntu `.deb` from an Ubuntu 24.04 environment using `packaging/linux/
 - [x] Linux PipeWire capture-to-processing pipeline
 - [x] Bounded capture/virtual-source audio queue
 - [x] Basic processed-duration and buffer underrun/overrun counters
-- [ ] Windows real-time processing pipeline
+- [x] Windows real-time capture/process/render pipeline (virtual cable required)
 - [ ] Latency measurements
 
 ### Phase 5 — Virtual Microphone
 
 - [x] PipeWire virtual microphone source (Linux development command)
-- [ ] Windows virtual microphone architecture
+- [ ] Bundled Windows virtual microphone endpoint and driver installation
 - [ ] Application compatibility testing
 
 ### Phase 6 — Desktop Application

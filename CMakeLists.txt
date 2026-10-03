@@ -101,6 +101,7 @@ target_link_libraries(clearmic_core PRIVATE rnnoise)
 if(WIN32)
     add_library(clearmic_platform audio-engine/platform/windows/src/device_manager.cpp
         audio-engine/platform/windows/src/live_capture.cpp
+        audio-engine/platform/windows/src/live_processing.cpp
         audio-engine/platform/windows/src/desktop_application.cpp)
     target_include_directories(clearmic_platform PUBLIC audio-engine/platform/windows/include)
     target_link_libraries(clearmic_platform PUBLIC clearmic_core ole32 uuid setupapi cfgmgr32 comctl32 shell32 winmm)

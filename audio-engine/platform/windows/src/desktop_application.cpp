@@ -43,12 +43,20 @@ constexpr int enhancement_status_label = 116;
 constexpr int gain_value_label = 117;
 constexpr int device_id_label = 118;
 constexpr int enhancement_check = 119;
+constexpr int render_output_combo = 120;
+constexpr int live_route_button = 121;
+constexpr UINT live_route_complete_message = WM_APP + 2;
+constexpr UINT live_route_started_message = WM_APP + 3;
 
 struct RecordCompletion {
     bool success{};
     std::wstring message;
     double input_rms{};
     double output_rms{};
+};
+
+struct LiveRouteCompletion {
+    std::wstring message;
 };
 
 struct Application {
@@ -73,13 +81,19 @@ struct Application {
     HWND gain_value{};
     HWND device_id{};
     HWND enhancement{};
+    HWND render_output{};
+    HWND live_route{};
     std::vector<audio::AudioDevice> devices;
+    std::vector<audio::AudioDevice> render_devices;
     std::wstring settings_file;
     std::filesystem::path original_file;
     std::filesystem::path processed_file;
     std::thread capture_thread;
+    std::thread live_route_thread;
     std::atomic_bool shutting_down{};
+    std::atomic_bool stop_live_route{};
     bool recording{};
+    bool live_routing{};
     bool refreshing_devices{};
     bool samples_ready{};
 };
@@ -159,6 +173,13 @@ int selected_device_index(const Application& app) {
     return index >= 0 && static_cast<std::size_t>(index) < app.devices.size() ? static_cast<int>(index) : -1;
 }
 
+int selected_render_device_index(const Application& app) {
+    const LRESULT row = SendMessageW(app.render_output, CB_GETCURSEL, 0, 0);
+    if (row == CB_ERR) return -1;
+    const LRESULT index = SendMessageW(app.render_output, CB_GETITEMDATA, static_cast<WPARAM>(row), 0);
+    return index >= 0 && static_cast<std::size_t>(index) < app.render_devices.size() ? static_cast<int>(index) : -1;
+}
+
 void update_device_status(Application& app) {
     const int index = selected_device_index(app);
     if (index < 0) {
@@ -206,28 +227,36 @@ void update_device_status(Application& app) {
 
 void update_controls(Application& app) {
     const bool has_device = selected_device_index(app) >= 0;
-    EnableWindow(app.record, has_device && !app.recording);
-    EnableWindow(app.microphone, !app.recording);
-    EnableWindow(app.preset, !app.recording);
-    EnableWindow(app.noise_suppression, !app.recording);
-    EnableWindow(app.noise_gate, !app.recording);
-    EnableWindow(app.automatic_gain, !app.recording);
-    EnableWindow(app.compressor, !app.recording);
-    EnableWindow(app.enhancement, !app.recording);
-    EnableWindow(app.input_gain, !app.recording);
-    EnableWindow(app.play_original, !app.recording && app.samples_ready);
-    EnableWindow(app.play_processed, !app.recording && app.samples_ready);
+    const bool idle = !app.recording && !app.live_routing;
+    EnableWindow(app.record, has_device && idle);
+    EnableWindow(app.microphone, idle);
+    EnableWindow(app.render_output, idle);
+    EnableWindow(app.preset, idle);
+    EnableWindow(app.noise_suppression, idle);
+    EnableWindow(app.noise_gate, idle);
+    EnableWindow(app.automatic_gain, idle);
+    EnableWindow(app.compressor, idle);
+    EnableWindow(app.enhancement, idle);
+    EnableWindow(app.input_gain, idle);
+    EnableWindow(app.play_original, idle && app.samples_ready);
+    EnableWindow(app.play_processed, idle && app.samples_ready);
+    SetWindowTextW(app.live_route, app.live_routing ? L"Stop live routing" : L"Start live routing");
+    EnableWindow(app.live_route, has_device && (app.live_routing ||
+        (!app.recording && selected_render_device_index(app) >= 0)));
 }
 
 void refresh_devices(Application& app) {
-    if (app.recording || app.refreshing_devices) return;
+    if (app.recording || app.live_routing || app.refreshing_devices) return;
     app.refreshing_devices = true;
     const auto preferred = read_setting(app, L"audio", L"input-device");
+    const auto preferred_render = read_setting(app, L"audio", L"render-device");
     try {
         app.devices = DeviceManager{}.input_devices();
+        app.render_devices = DeviceManager{}.output_devices();
     } catch (const std::exception& error) {
         SetWindowTextW(app.status, to_wide(error.what()).c_str());
         app.devices.clear();
+        app.render_devices.clear();
     }
     SendMessageW(app.microphone, CB_RESETCONTENT, 0, 0);
     int preferred_row = -1;
@@ -248,6 +277,24 @@ void refresh_devices(Application& app) {
     }
     const int active_row = preferred_row >= 0 ? preferred_row : (default_row >= 0 ? default_row : (row > 0 ? 0 : -1));
     if (active_row >= 0) SendMessageW(app.microphone, CB_SETCURSEL, static_cast<WPARAM>(active_row), 0);
+
+    SendMessageW(app.render_output, CB_RESETCONTENT, 0, 0);
+    SendMessageW(app.render_output, CB_ADDSTRING, 0,
+                 reinterpret_cast<LPARAM>(L"Choose a virtual-cable playback endpoint"));
+    SendMessageW(app.render_output, CB_SETITEMDATA, 0, static_cast<LPARAM>(-1));
+    int preferred_render_row = -1;
+    for (std::size_t index = 0; index < app.render_devices.size(); ++index) {
+        const auto& device = app.render_devices[index];
+        std::wstring label = to_wide(device.name);
+        if (device.is_default) label += L" (default playback)";
+        const LRESULT added = SendMessageW(app.render_output, CB_ADDSTRING, 0,
+                                            reinterpret_cast<LPARAM>(label.c_str()));
+        if (added == CB_ERR || added == CB_ERRSPACE) continue;
+        SendMessageW(app.render_output, CB_SETITEMDATA, static_cast<WPARAM>(added), static_cast<LPARAM>(index));
+        if (to_wide(device.id) == preferred_render) preferred_render_row = static_cast<int>(added);
+    }
+    SendMessageW(app.render_output, CB_SETCURSEL,
+                 static_cast<WPARAM>(preferred_render_row >= 0 ? preferred_render_row : 0), 0);
     app.refreshing_devices = false;
     update_device_status(app);
     update_controls(app);
@@ -351,6 +398,51 @@ void begin_recording(Application& app) {
     }
 }
 
+void toggle_live_route(Application& app) {
+    if (app.live_routing) {
+        app.stop_live_route.store(true, std::memory_order_relaxed);
+        SetWindowTextW(app.status, L"Stopping the live microphone route...");
+        return;
+    }
+    if (app.recording) return;
+    const int input_index = selected_device_index(app);
+    const int output_index = selected_render_device_index(app);
+    if (input_index < 0 || output_index < 0) {
+        SetWindowTextW(app.status, L"Select a microphone and a virtual-cable playback endpoint first.");
+        return;
+    }
+    const auto input_id = app.devices[static_cast<std::size_t>(input_index)].id;
+    const auto output_id = app.render_devices[static_cast<std::size_t>(output_index)].id;
+    const auto output_name = to_wide(app.render_devices[static_cast<std::size_t>(output_index)].name);
+    const auto settings = current_settings(app);
+    app.stop_live_route.store(false, std::memory_order_relaxed);
+    app.live_routing = true;
+    SetWindowTextW(app.status, (L"Starting live processing to " + output_name +
+        L". Other apps must select its paired virtual microphone endpoint.").c_str());
+    update_controls(app);
+    const HWND window = app.window;
+    try {
+        app.live_route_thread = std::thread([&app, window, input_id, output_id, settings] {
+            auto* completion = new LiveRouteCompletion;
+            try {
+                run_live_processing(input_id, output_id, settings, app.stop_live_route, [window] {
+                    PostMessageW(window, live_route_started_message, 0, 0);
+                });
+                completion->message = L"Live microphone processing stopped.";
+            } catch (const std::exception& error) {
+                completion->message = to_wide(error.what());
+            }
+            if (app.shutting_down.load(std::memory_order_relaxed) ||
+                !PostMessageW(window, live_route_complete_message, 0, reinterpret_cast<LPARAM>(completion)))
+                delete completion;
+        });
+    } catch (const std::exception& error) {
+        app.live_routing = false;
+        SetWindowTextW(app.status, to_wide(error.what()).c_str());
+        update_controls(app);
+    }
+}
+
 void set_profile_controls(Application& app, const int index) {
     const auto settings = audio::settings_for_preset(index == 1 ? audio::Preset::meeting
         : (index == 2 ? audio::Preset::strong_noise_reduction : audio::Preset::natural));
@@ -397,53 +489,62 @@ void initialize_controls(Application& app) {
     app.battery_status = GetDlgItem(app.window, battery_status_label);
     add_label(app, L"Diagnostics · WASAPI format and latency are available only when measured", 24, 174, 680, 34, device_id_label);
     app.device_id = GetDlgItem(app.window, device_id_label);
-    add_control(app, L"BUTTON", L"Apply enhancement to processed A/B sample", BS_AUTOCHECKBOX, 24, 208, 340, 26, enhancement_check);
+    add_label(app, L"Processed output device", 24, 210, 240);
+    add_control(app, L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, 24, 232, 680, 240,
+                render_output_combo, WS_EX_CLIENTEDGE);
+    app.render_output = GetDlgItem(app.window, render_output_combo);
+    add_control(app, L"BUTTON", L"Start live routing", BS_PUSHBUTTON, 24, 270, 180, 34, live_route_button);
+    app.live_route = GetDlgItem(app.window, live_route_button);
+    add_label(app, L"Requires a virtual cable driver. Choose its playback endpoint; voice apps use its paired microphone.",
+              220, 273, 484, 36);
+
+    add_control(app, L"BUTTON", L"Apply enhancement to processed A/B sample", BS_AUTOCHECKBOX, 24, 312, 400, 26, enhancement_check);
     app.enhancement = GetDlgItem(app.window, enhancement_check);
-    add_label(app, L"Processing profile", 24, 242, 180);
-    add_control(app, L"COMBOBOX", L"", CBS_DROPDOWNLIST, 24, 264, 320, 120, preset_combo);
+    add_label(app, L"Processing profile", 24, 346, 180);
+    add_control(app, L"COMBOBOX", L"", CBS_DROPDOWNLIST, 24, 368, 320, 120, preset_combo);
     app.preset = GetDlgItem(app.window, preset_combo);
     SendMessageW(app.preset, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Natural"));
     SendMessageW(app.preset, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Meeting"));
     SendMessageW(app.preset, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Strong Noise Reduction"));
 
-    add_control(app, L"BUTTON", L"Noise suppression", BS_AUTOCHECKBOX, 24, 306, 190, 26, noise_suppression_check);
-    add_control(app, L"BUTTON", L"Noise gate", BS_AUTOCHECKBOX, 230, 306, 170, 26, noise_gate_check);
-    add_control(app, L"BUTTON", L"Automatic gain", BS_AUTOCHECKBOX, 420, 306, 170, 26, automatic_gain_check);
-    add_control(app, L"BUTTON", L"Compressor", BS_AUTOCHECKBOX, 24, 336, 170, 26, compressor_check);
+    add_control(app, L"BUTTON", L"Noise suppression", BS_AUTOCHECKBOX, 24, 410, 190, 26, noise_suppression_check);
+    add_control(app, L"BUTTON", L"Noise gate", BS_AUTOCHECKBOX, 230, 410, 170, 26, noise_gate_check);
+    add_control(app, L"BUTTON", L"Automatic gain", BS_AUTOCHECKBOX, 420, 410, 170, 26, automatic_gain_check);
+    add_control(app, L"BUTTON", L"Compressor", BS_AUTOCHECKBOX, 24, 440, 170, 26, compressor_check);
     app.noise_suppression = GetDlgItem(app.window, noise_suppression_check);
     app.noise_gate = GetDlgItem(app.window, noise_gate_check);
     app.automatic_gain = GetDlgItem(app.window, automatic_gain_check);
     app.compressor = GetDlgItem(app.window, compressor_check);
 
-    add_label(app, L"Input gain", 24, 374, 100);
-    add_label(app, L"0 dB", 110, 374, 45, 22, gain_value_label);
+    add_label(app, L"Input gain", 24, 478, 100);
+    add_label(app, L"0 dB", 110, 478, 45, 22, gain_value_label);
     app.gain_value = GetDlgItem(app.window, gain_value_label);
-    add_control(app, TRACKBAR_CLASSW, L"", TBS_AUTOTICKS | TBS_HORZ, 160, 368, 360, 34, input_gain_slider);
+    add_control(app, TRACKBAR_CLASSW, L"", TBS_AUTOTICKS | TBS_HORZ, 160, 472, 360, 34, input_gain_slider);
     app.input_gain = GetDlgItem(app.window, input_gain_slider);
     SendMessageW(app.input_gain, TBM_SETRANGE, TRUE, MAKELONG(-12, 12));
     SendMessageW(app.input_gain, TBM_SETTICFREQ, 3, 0);
     SendMessageW(app.input_gain, TBM_SETPOS, TRUE, 0);
 
-    add_label(app, L"Last sample input", 24, 416, 130);
-    add_control(app, PROGRESS_CLASSW, L"", PBS_SMOOTH, 160, 416, 544, 20, input_meter);
+    add_label(app, L"Last sample input", 24, 520, 130);
+    add_control(app, PROGRESS_CLASSW, L"", PBS_SMOOTH, 160, 520, 544, 20, input_meter);
     app.input_level = GetDlgItem(app.window, input_meter);
-    add_label(app, L"Last processed sample", 24, 444, 130);
-    add_control(app, PROGRESS_CLASSW, L"", PBS_SMOOTH, 160, 444, 544, 20, output_meter);
+    add_label(app, L"Last processed sample", 24, 548, 130);
+    add_control(app, PROGRESS_CLASSW, L"", PBS_SMOOTH, 160, 548, 544, 20, output_meter);
     app.output_level = GetDlgItem(app.window, output_meter);
     SendMessageW(app.input_level, PBM_SETRANGE32, 0, 100);
     SendMessageW(app.output_level, PBM_SETRANGE32, 0, 100);
 
-    add_control(app, L"BUTTON", L"Record A/B test (5 seconds)", BS_PUSHBUTTON, 24, 484, 260, 34, record_button);
-    add_control(app, L"BUTTON", L"Play original", BS_PUSHBUTTON, 300, 484, 120, 34, play_original_button);
-    add_control(app, L"BUTTON", L"Play processed", BS_PUSHBUTTON, 430, 484, 140, 34, play_processed_button);
-    add_control(app, L"BUTTON", L"Stop playback", BS_PUSHBUTTON, 580, 484, 124, 34, stop_playback_button);
+    add_control(app, L"BUTTON", L"Record A/B test (5 seconds)", BS_PUSHBUTTON, 24, 588, 260, 34, record_button);
+    add_control(app, L"BUTTON", L"Play original", BS_PUSHBUTTON, 300, 588, 120, 34, play_original_button);
+    add_control(app, L"BUTTON", L"Play processed", BS_PUSHBUTTON, 430, 588, 140, 34, play_processed_button);
+    add_control(app, L"BUTTON", L"Stop playback", BS_PUSHBUTTON, 580, 588, 124, 34, stop_playback_button);
     app.record = GetDlgItem(app.window, record_button);
     app.play_original = GetDlgItem(app.window, play_original_button);
     app.play_processed = GetDlgItem(app.window, play_processed_button);
     app.stop_playback = GetDlgItem(app.window, stop_playback_button);
-    add_label(app, L"", 24, 530, 680, 38, status_label);
+    add_label(app, L"", 24, 632, 680, 38, status_label);
     app.status = GetDlgItem(app.window, status_label);
-    add_label(app, L"Processing is applied to A/B samples only; Windows virtual-microphone routing is unavailable.", 24, 576, 680, 28,
+    add_label(app, L"Live processing is available through the selected playback endpoint; a compatible virtual cable driver is required.", 24, 678, 680, 28,
               enhancement_status_label);
     app.enhancement_status = GetDlgItem(app.window, enhancement_status_label);
 
@@ -488,6 +589,16 @@ LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPAR
                 update_controls(*app);
             }
             return 0;
+        case render_output_combo:
+            if (HIWORD(wparam) == CBN_SELCHANGE && !app->refreshing_devices) {
+                const int index = selected_render_device_index(*app);
+                if (index >= 0) {
+                    const auto id = to_wide(app->render_devices[static_cast<std::size_t>(index)].id);
+                    write_setting(*app, L"audio", L"render-device", id.c_str());
+                } else write_setting(*app, L"audio", L"render-device", L"");
+                update_controls(*app);
+            }
+            return 0;
         case preset_combo:
             if (HIWORD(wparam) == CBN_SELCHANGE) {
                 set_profile_controls(*app, static_cast<int>(SendMessageW(app->preset, CB_GETCURSEL, 0, 0)));
@@ -503,6 +614,9 @@ LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPAR
             return 0;
         case record_button:
             begin_recording(*app);
+            return 0;
+        case live_route_button:
+            toggle_live_route(*app);
             return 0;
         case play_original_button:
             if (PlaySoundW(app->original_file.c_str(), nullptr, SND_FILENAME | SND_ASYNC | SND_NODEFAULT))
@@ -536,8 +650,25 @@ LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPAR
         update_controls(*app);
         return 0;
     }
+    case live_route_complete_message: {
+        std::unique_ptr<LiveRouteCompletion> completion(reinterpret_cast<LiveRouteCompletion*>(lparam));
+        if (app->live_route_thread.joinable()) app->live_route_thread.join();
+        app->live_routing = false;
+        app->stop_live_route.store(false, std::memory_order_relaxed);
+        SetWindowTextW(app->status, completion->message.c_str());
+        update_controls(*app);
+        refresh_devices(*app);
+        return 0;
+    }
+    case live_route_started_message:
+        if (app->live_routing && !app->stop_live_route.load(std::memory_order_relaxed))
+            SetWindowTextW(app->status,
+                L"Live microphone processing is active. Voice apps must select the paired virtual microphone endpoint.");
+        return 0;
     case WM_CLOSE:
         app->shutting_down.store(true, std::memory_order_relaxed);
+        app->stop_live_route.store(true, std::memory_order_relaxed);
+        if (app->live_route_thread.joinable()) app->live_route_thread.join();
         if (app->capture_thread.joinable()) app->capture_thread.join();
         PlaySoundW(nullptr, nullptr, 0);
         KillTimer(window, 1);
@@ -562,7 +693,7 @@ int run_desktop_application() {
     window_class_info.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     window_class_info.lpszClassName = window_class;
     if (!RegisterClassExW(&window_class_info) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return 1;
-    RECT bounds{0, 0, 740, 640};
+    RECT bounds{0, 0, 740, 722};
     AdjustWindowRect(&bounds, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, FALSE);
     HWND window = CreateWindowExW(0, window_class, L"ClearMic", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
                                   CW_USEDEFAULT, CW_USEDEFAULT, bounds.right - bounds.left, bounds.bottom - bounds.top,
