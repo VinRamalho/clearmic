@@ -41,8 +41,11 @@ CONTROL
 
 mkdir -p "$build_dir/dist"
 dpkg-deb --root-owner-group --build "$package_root" "$build_dir/dist/$package_name.deb"
-if ! dpkg-deb --contents "$build_dir/dist/$package_name.deb" | grep -q 'usr/share/doc/clearmic/licenses/rnnoise/COPYING'; then
-  echo "RNNoise license was not included in the Ubuntu package" >&2
+package_contents="$(dpkg-deb --contents "$build_dir/dist/$package_name.deb")"
+if ! grep -q 'usr/share/doc/clearmic/LICENSE' <<< "$package_contents" || \
+   ! grep -q 'usr/share/doc/clearmic/THIRD_PARTY_NOTICES.md' <<< "$package_contents" || \
+   ! grep -q 'usr/share/doc/clearmic/licenses/rnnoise/COPYING' <<< "$package_contents"; then
+  echo "ClearMic or RNNoise license notices were not included in the Ubuntu package" >&2
   exit 1
 fi
 echo "Built $build_dir/dist/$package_name.deb"

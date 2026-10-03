@@ -64,7 +64,9 @@ jobs:
           Write-Output "Installed files: $($installedFiles.FullName -join ', ')"
           if (-not ($installedFiles.Name -contains "clearmic-desktop.exe")) { throw "Installed desktop application was not found" }
           if (-not ($installedFiles.Name -contains "clearmic-cli.exe")) { throw "Installed CLI was not found" }
-          if (-not ($installedFiles.Name -contains "COPYING")) { throw "Installed RNNoise license was not found" }
+          foreach ($requiredNotice in @("LICENSE", "THIRD_PARTY_NOTICES.md", "COPYING")) {
+            if (-not ($installedFiles.Name -contains $requiredNotice)) { throw "Installed license notice was not found: $requiredNotice" }
+          }
           $desktopExecutable = $installedFiles | Where-Object Name -eq "clearmic-desktop.exe" | Select-Object -First 1
           $desktopProcess = Start-Process -FilePath $desktopExecutable.FullName -PassThru
           Write-Output "Launched installed desktop application with PID $($desktopProcess.Id)"

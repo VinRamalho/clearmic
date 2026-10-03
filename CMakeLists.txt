@@ -71,6 +71,8 @@ file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/licenses/rnnoise")
 configure_file("${_rnnoise_source_root}/COPYING" "${CMAKE_BINARY_DIR}/licenses/rnnoise/COPYING" COPYONLY)
 install(FILES "${CMAKE_BINARY_DIR}/licenses/rnnoise/COPYING"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/clearmic/licenses/rnnoise")
+install(FILES "${CMAKE_SOURCE_DIR}/LICENSE" "${CMAKE_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/clearmic")
 
 add_library(rnnoise STATIC
     "${_rnnoise_source_root}/src/denoise.c"

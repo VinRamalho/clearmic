@@ -425,7 +425,7 @@ The eventual goal is to distribute ClearMic as a normal desktop application.
 
 ### Windows
 
-The Windows workflow builds a CPack/WiX MSI containing the desktop and CLI executables and verifies installation, installed files, the RNNoise license notice, desktop launch, and removal. The Ubuntu `.deb` includes the same upstream license notice under `/usr/share/doc/clearmic/licenses/rnnoise/`. The desktop can continuously process WASAPI microphone input and render it to a selected playback endpoint. To use that stream as a microphone, install a compatible virtual audio cable separately, select its playback endpoint in ClearMic, and select its paired recording endpoint in the voice application. The MSI does not include or install a virtual-audio driver; Windows virtual-microphone packaging and native compatibility validation remain open. A public release also needs a project license.
+The Windows workflow builds a CPack/WiX MSI containing the desktop and CLI executables and verifies installation, the project and third-party license notices, desktop launch, and removal. The Ubuntu `.deb` includes the same notices under `/usr/share/doc/clearmic/`. The desktop can continuously process WASAPI microphone input and render it to a selected playback endpoint. To use that stream as a microphone, install a compatible virtual audio cable separately, select its playback endpoint in ClearMic, and select its paired recording endpoint in the voice application. The MSI does not include or install a virtual-audio driver; Windows virtual-microphone packaging and native compatibility validation remain open.
 
 ### Ubuntu
 
@@ -549,9 +549,7 @@ When contributing audio-processing changes, prefer measurable improvements and A
 
 ## 📄 License
 
-The project is intended to be open source.
-
-The final license will be defined before the first public release.
+ClearMic's original source code and documentation are released under the MIT License. See [LICENSE](LICENSE). RNNoise and other third-party components retain their own terms; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and the installed upstream RNNoise `COPYING` notice.
 
 ---
 
