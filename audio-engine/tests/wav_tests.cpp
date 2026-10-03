@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <cstdlib>
 #include <stdexcept>
 #include <string>
 
@@ -13,7 +14,8 @@ namespace {
 void require(const bool condition, const char* message) {
     if (!condition) {
         const std::string detail = "ClearMic test failure: " + std::string(message);
-        std::cout << "::error::" << detail << '\n';
+        const bool in_github_actions = std::getenv("GITHUB_ACTIONS") != nullptr;
+        if (in_github_actions) std::cout << "::error::" << detail << '\n';
         throw std::runtime_error(detail);
     }
 }

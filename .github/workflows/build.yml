@@ -10,7 +10,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Configure
-        run: cmake -S . -B build -A x64 -DCMAKE_CXX_FLAGS=/DGITHUB_ACTIONS -DCMAKE_C_FLAGS=/DGITHUB_ACTIONS
+        run: cmake -S . -B build -A x64
       - name: Build
         run: |
           cmake --build build --config Release --verbose *> build.log
@@ -46,7 +46,7 @@ jobs:
       - name: Install PipeWire development headers
         run: sudo apt-get update && sudo apt-get install --yes libpipewire-0.3-dev pkg-config
       - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_CXX_FLAGS=-DGITHUB_ACTIONS -DCMAKE_C_FLAGS=-DGITHUB_ACTIONS
+        run: cmake -S . -B build -G Ninja
       - name: Build
         run: cmake --build build --config Release --verbose 2>&1 | tee build.log
       - name: Test

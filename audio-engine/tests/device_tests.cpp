@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <iostream>
+#include <cstdlib>
 #include <stdexcept>
 #include <string>
 
@@ -23,10 +24,8 @@ int main() {
     } catch (const std::exception& error) {
         const std::string message = "ClearMic test failure: " + std::string(error.what());
         std::cerr << message << '\n';
-#ifdef GITHUB_ACTIONS
-        std::cout << "::error::" << message << '\n';
-        std::cout << "::error file=audio-engine/tests/wav_tests.cpp::" << message << '\n';
-#endif
+        if (std::getenv("GITHUB_ACTIONS") != nullptr)
+            std::cout << "::error file=audio-engine/tests/wav_tests.cpp::" << message << '\n';
         return 7;
     }
     return 0;
