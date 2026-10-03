@@ -5,12 +5,17 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <stdexcept>
 #include <string>
 
 namespace {
 void require(const bool condition, const char* message) {
-    if (!condition) throw std::runtime_error(message);
+    if (!condition) {
+        const std::string detail = "ClearMic test failure: " + std::string(message);
+        std::cout << "::error::" << detail << '\n';
+        throw std::runtime_error(detail);
+    }
 }
 
 clearmic::audio::PcmAudio make_audio(const std::uint32_t sample_rate, const std::uint16_t channels,
