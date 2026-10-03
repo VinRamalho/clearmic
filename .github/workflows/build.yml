@@ -128,7 +128,7 @@ jobs:
         run: |
           set -o pipefail
           set +e
-          bash tests/linux/pipewire_virtual_source_e2e.sh build/clearmic-cli 2>&1 | tee pipewire-route-test.log
+          bash -x tests/linux/pipewire_virtual_source_e2e.sh build/clearmic-cli 2>&1 | tee pipewire-route-test.log
           test_status=${PIPESTATUS[0]}
           set -e
           if [ "$test_status" -ne 0 ]; then
