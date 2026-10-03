@@ -118,6 +118,7 @@ elseif(UNIX AND NOT APPLE)
     pkg_check_modules(GIO REQUIRED IMPORTED_TARGET gio-2.0)
     add_library(clearmic_platform audio-engine/platform/linux/src/device_manager.cpp
         audio-engine/platform/linux/src/bluez_battery.cpp
+        audio-engine/platform/linux/src/upower_battery.cpp
         audio-engine/platform/linux/src/live_capture.cpp
         audio-engine/platform/linux/src/realtime_microphone.cpp
         audio-engine/platform/linux/src/desktop_application.cpp)
@@ -151,6 +152,11 @@ if(BUILD_TESTING)
     add_executable(clearmic-core-tests audio-engine/tests/device_tests.cpp audio-engine/tests/wav_tests.cpp
         audio-engine/tests/processor_chain_tests.cpp)
     target_link_libraries(clearmic-core-tests PRIVATE clearmic_core)
+    if(UNIX AND NOT APPLE)
+        target_include_directories(clearmic-core-tests PRIVATE audio-engine/platform/linux/src)
+        target_sources(clearmic-core-tests PRIVATE audio-engine/platform/linux/src/upower_battery.cpp)
+        target_link_libraries(clearmic-core-tests PRIVATE PkgConfig::GIO)
+    endif()
     add_test(NAME clearmic-core-tests COMMAND clearmic-core-tests)
     if(WIN32 OR UNIX AND NOT APPLE)
         add_test(NAME clearmic-invalid-record-test-gain COMMAND clearmic-cli record-test 1 original.wav processed.wav --input-gain-db=13)

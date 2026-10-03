@@ -1,8 +1,12 @@
 #include "clearmic/audio/device.hpp"
+#ifdef __linux__
+#include "upower_battery.hpp"
+#endif
 
 #include <optional>
 #include <iostream>
 #include <cstdlib>
+#include <limits>
 #include <stdexcept>
 #include <string>
 
@@ -48,6 +52,27 @@ int main() {
         reported_zero_battery.charging != ChargingState::not_charging) return 11;
     device.capabilities.battery = reported_zero_battery;
     if (!device.capabilities.battery || *device.capabilities.battery->percentage != 0) return 12;
+#ifdef __linux__
+    using clearmic::platform::pipewire::upower_battery_from_values;
+    using clearmic::platform::pipewire::upower_address_matches;
+    if (!upower_address_matches("/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF", "", "aa:bb:cc:dd:ee:ff") ||
+        !upower_address_matches("", "AA-BB-CC-DD-EE-FF", "aa:bb:cc:dd:ee:ff") ||
+        upower_address_matches("/org/bluez/hci0/dev_11_22_33_44_55_66", "11:22:33:44:55:66", "aa:bb:cc:dd:ee:ff")) return 22;
+    const auto charging_battery = upower_battery_from_values(false, true, 17, 82.6, 1U, 1U);
+    if (!charging_battery || charging_battery->percentage != 83 ||
+        charging_battery->charging != ChargingState::charging) return 18;
+    const auto full_battery = upower_battery_from_values(false, true, 19, 100.0, 1U, 4U);
+    if (!full_battery || full_battery->charging != ChargingState::full) return 19;
+    if (upower_battery_from_values(true, true, 17, 82.0, 1U, 1U) ||
+        upower_battery_from_values(false, false, 17, 82.0, 1U, 1U) ||
+        upower_battery_from_values(false, true, 11, 82.0, 1U, 1U) ||
+        upower_battery_from_values(false, true, 17, 82.0, 4U, 1U) ||
+        upower_battery_from_values(false, true, 17, 101.0, 1U, 1U) ||
+        upower_battery_from_values(false, true, 17, std::numeric_limits<double>::quiet_NaN(), 1U, 1U)) return 20;
+    const auto unknown_state = upower_battery_from_values(false, true, 28, 0.0, std::nullopt, 0U);
+    if (!unknown_state || unknown_state->percentage != 0 ||
+        unknown_state->charging != ChargingState::unknown) return 21;
+#endif
     if (is_valid_battery_percentage(101)) return 6;
     try {
         run_wav_tests();

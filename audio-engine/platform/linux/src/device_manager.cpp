@@ -1,5 +1,6 @@
 #include "clearmic/platform/linux/device_manager.hpp"
 #include "bluez_battery.hpp"
+#include "upower_battery.hpp"
 
 #include <pipewire/pipewire.h>
 #include <pipewire/extensions/metadata.h>
@@ -172,6 +173,7 @@ std::vector<audio::AudioDevice> DeviceManager::input_devices() {
     pw_proxy_destroy(reinterpret_cast<pw_proxy*>(state.registry));
     pw_core_disconnect(state.core); pw_context_destroy(state.context); pw_main_loop_destroy(state.loop);
     populate_bluez_battery(state.devices);
+    populate_upower_battery(state.devices);
     return state.devices;
 }
 }

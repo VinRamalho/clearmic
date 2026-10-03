@@ -235,10 +235,17 @@ void update_device_status(Application& app) {
                 << std::setw(4) << *selected.usb_vendor_id << ':' << std::setw(4) << *selected.usb_product_id;
         status += usb_ids.str();
     }
-    if (selected.capabilities.battery && selected.capabilities.battery->percentage)
+    if (selected.capabilities.battery && selected.capabilities.battery->percentage) {
         status += " · Battery " + std::to_string(*selected.capabilities.battery->percentage) + "%";
-    else if (selected.bluetooth_address)
+        switch (selected.capabilities.battery->charging) {
+        case audio::ChargingState::charging: status += " (charging)"; break;
+        case audio::ChargingState::not_charging: status += " (not charging)"; break;
+        case audio::ChargingState::full: status += " (full)"; break;
+        case audio::ChargingState::unknown: break;
+        }
+    } else if (selected.bluetooth_address) {
         status += " · Battery not available";
+    }
     gtk_label_set_text(GTK_LABEL(app.device_status), status.c_str());
 }
 
