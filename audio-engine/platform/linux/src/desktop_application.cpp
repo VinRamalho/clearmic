@@ -576,11 +576,9 @@ void read_service_output(GObject* source, GAsyncResult* result, gpointer user_da
                 const bool complete_latency = capture_graph_ms >= 0.0F && capture_queue_ms >= 0.0F && capture_buffered_ms >= 0.0F &&
                     source_graph_ms >= 0.0F && source_queue_ms >= 0.0F && source_buffered_ms >= 0.0F;
                 if (complete_latency) {
-                    const auto estimated_route_ms = max_dsp_ms + capture_graph_ms + capture_queue_ms + capture_buffered_ms +
-                        source_graph_ms + source_queue_ms + source_buffered_ms;
                     std::snprintf(text, sizeof(text),
-                        "DSP max %.3f ms (%.1f%% budget) · estimated route %.2f ms (capture %.2f + %.2f + %.2f; source %.2f + %.2f + %.2f ms) · processed %llu s · overruns %llu/%llu",
-                        max_dsp_ms, max_dsp_budget, estimated_route_ms, capture_graph_ms, capture_queue_ms, capture_buffered_ms,
+                        "DSP max %.3f ms (%.1f%% budget) · PipeWire reported delay capture %.2f + %.2f + %.2f; source %.2f + %.2f + %.2f ms · processed %llu s · overruns %llu/%llu",
+                        max_dsp_ms, max_dsp_budget, capture_graph_ms, capture_queue_ms, capture_buffered_ms,
                         source_graph_ms, source_queue_ms, source_buffered_ms, processed_seconds, overruns, underruns);
                 } else {
                     std::snprintf(text, sizeof(text),
