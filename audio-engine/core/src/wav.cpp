@@ -1,7 +1,6 @@
 #include "clearmic/audio/wav.hpp"
 
 #include <array>
-#include <bit>
 #include <fstream>
 #include <limits>
 #include <stdexcept>
@@ -131,7 +130,9 @@ PcmAudio read_pcm16_wav(const std::filesystem::path& path) {
     for (std::size_t index = 0; index < audio.samples.size(); ++index) {
         const auto value = static_cast<std::uint16_t>(data[index * 2]) |
                            static_cast<std::uint16_t>(static_cast<std::uint16_t>(data[index * 2 + 1]) << 8U);
-        audio.samples[index] = std::bit_cast<std::int16_t>(value);
+        audio.samples[index] = value <= static_cast<std::uint16_t>(std::numeric_limits<std::int16_t>::max())
+            ? static_cast<std::int16_t>(value)
+            : static_cast<std::int16_t>(static_cast<std::int32_t>(value) - 0x10000);
     }
     return audio;
 }
