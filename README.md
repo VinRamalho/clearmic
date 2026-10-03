@@ -411,7 +411,7 @@ Windows 11 device enumeration and bounded WASAPI microphone capture are implemen
 
 The supported development build uses CMake and Visual Studio / MSVC.
 
-`record-test` captures up to 30 seconds and writes original/processed WAV files. The recorded sample is converted to 48 kHz mono PCM and processed after capture ends. Continuous real-time routing and a virtual-microphone endpoint remain unimplemented.
+`record-test` captures up to 30 seconds and writes original/processed WAV files. The recorded sample is converted to 48 kHz mono PCM and processed after capture ends. Continuous real-time routing and a virtual-microphone endpoint are not implemented on Windows.
 
 Build from a Visual Studio Developer PowerShell with:
 

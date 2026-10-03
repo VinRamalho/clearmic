@@ -51,6 +51,14 @@ jobs:
         run: cmake --build build --config Release --verbose 2>&1 | tee build.log
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure | tee test.log
+      - name: Build Ubuntu CLI package
+        run: bash packaging/linux/build-deb.sh
+      - name: Preserve Ubuntu package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: clearmic-ubuntu-amd64-deb
+          path: build/linux-package/dist/*.deb
+          retention-days: 3
       - name: Publish test diagnostics
         if: always()
         run: cat test.log >> "$GITHUB_STEP_SUMMARY"
