@@ -4,7 +4,7 @@
 
 ClearMic is an open-source, cross-platform desktop application designed to improve microphone voice quality in real time.
 
-> **Development status:** the C++20 device model, Windows WASAPI and Linux PipeWire input enumeration backends, RNNoise WAV processing, and shared stateful DSP chain build on Windows and Ubuntu 24.04 in CI. The Linux CLI can explicitly capture up to 30 seconds from a discovered PipeWire source, process it, and write original/processed WAV files for manual comparison; it refuses to record when no source is available. The DSP chain includes Natural, Meeting, and Strong Noise Reduction presets with noise suppression, optional gain, gate, compression, and AGC. Windows live capture is not connected. The desktop UI, battery telemetry, virtual microphone, persistent settings, and installers remain unimplemented. This is an early development project, not an installable product.
+> **Development status:** the C++20 device model, Windows WASAPI and Linux PipeWire input enumeration backends, RNNoise WAV processing, and shared stateful DSP chain build on Windows and Ubuntu 24.04 in CI. Both platforms have a CLI-only `record-test` path that explicitly captures up to 30 seconds from an available microphone, processes the sample, and writes original/processed WAV files for manual comparison; Linux refuses to record when PipeWire reports no source. The DSP chain includes Natural, Meeting, and Strong Noise Reduction presets with noise suppression, optional gain, gate, compression, and AGC. Processing currently happens after this short capture completes; continuous live enhancement, desktop UI, battery telemetry, virtual microphone, persistent settings, and installers remain unimplemented. This is an early development project, not an installable product.
 
 It aims to reduce background noise, echo, room reverberation, and inconsistent microphone levels while preserving a natural-sounding voice.
 
@@ -116,8 +116,8 @@ ClearMic targets:
 
 | Platform | Audio Backend | Status |
 | --- | --- | --- |
-| Ubuntu / Linux | PipeWire | 🚧 Device enumeration builds in CI; runtime validation pending |
-| Windows 11 | WASAPI | 🚧 Device enumeration builds in CI; runtime validation pending |
+| Ubuntu / Linux | PipeWire | 🚧 Enumeration and bounded capture-test command build in CI; runtime microphone capture pending |
+| Windows 11 | WASAPI | 🚧 Enumeration and bounded capture-test command build in CI; runtime microphone capture pending |
 
 Additional Linux distributions using PipeWire may work in the future.
 
@@ -280,18 +280,14 @@ The current architecture targets:
 
 ### Audio processing
 
-- RNNoise for explicit offline 48 kHz PCM16 WAV processing
+- RNNoise for offline WAV processing and explicit short A/B capture tests at 48 kHz PCM16
+- Shared stateful DSP chain with Natural, Meeting, and Strong Noise Reduction presets
+- Optional input gain, noise gate, compressor, and RMS-based automatic gain control in that chain
 - WebRTC Audio Processing and additional DSP remain under evaluation for live capture and playback-reference AEC
 
 ### Desktop UI
 
-Planned:
-
-- React
-- TypeScript
-- Lightweight native desktop shell
-
-The project intentionally avoids committing to Electron unless there is a compelling technical reason to use it.
+The desktop UI framework has not been selected. The project will choose a lightweight cross-platform approach after the audio service and virtual-microphone architecture are established.
 
 ## 📚 Developer documentation
 
@@ -375,6 +371,14 @@ Once the CLI is available:
 ./build/clearmic-cli devices
 ```
 
+Capture a five-second microphone test and save original and processed audio for listening comparison:
+
+```bash
+./build/clearmic-cli record-test 5 original.wav processed.wav
+```
+
+The optional final argument selects a discovered device ID. Without it, the platform default microphone is used. Linux requires an available PipeWire source; Windows uses WASAPI. Capture is limited to 30 seconds and audio is processed locally after recording.
+
 Offline noise suppression for an existing WAV file:
 
 ```bash
@@ -383,27 +387,25 @@ Offline noise suppression for an existing WAV file:
 
 The current processor accepts PCM 16-bit WAV at 48 kHz with one or two channels. It rejects other sample rates and encodings rather than silently passing audio through.
 
-Example expected output:
+Example output format:
 
 ```text
-ClearMic Audio Devices
-
-[0] Built-in Audio Analog Stereo
-[1] Bluetooth Headset
-[2] USB Wireless Microphone
-
-Default input: Bluetooth Headset
+ClearMic input devices
+* USB Microphone
+    ID: <platform device ID>
+    Sample rate: 48000 Hz
+    Channels: 1
 ```
 
 ### Windows
 
-Windows 11 support will use WASAPI.
+Windows 11 device enumeration and bounded WASAPI microphone capture are implemented.
 
-The goal is to support a similarly simple CMake workflow using Visual Studio / MSVC.
+The supported development build uses CMake and Visual Studio / MSVC.
 
-The current Windows work is limited to device discovery; capture, processing, and virtual-microphone support remain unimplemented.
+`record-test` captures up to 30 seconds and writes original/processed WAV files. The recorded sample is converted to 48 kHz mono PCM and processed after capture ends. Continuous real-time routing and a virtual-microphone endpoint remain unimplemented.
 
-The current Windows device-enumeration target uses CMake and a Visual Studio C++ toolchain. Build from a Visual Studio Developer PowerShell with:
+Build from a Visual Studio Developer PowerShell with:
 
 ```powershell
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64
@@ -448,27 +450,25 @@ After installation, ClearMic should be available from the desktop application me
 - [x] Project architecture
 - [x] CMake build system (Windows and Ubuntu CI)
 - [x] Common audio/device abstractions
-- [ ] Linux / PipeWire device discovery
-- [ ] Windows / WASAPI device discovery
-- [ ] CLI device enumeration
+- [x] Linux / PipeWire device discovery
+- [x] Windows / WASAPI device discovery
+- [x] CLI device enumeration
 
 ### Phase 2 — Recording
 
-- [ ] Microphone capture
-- [ ] PCM WAV recording
-- [ ] Original vs. processed recording
+- [x] Bounded microphone capture for explicit CLI A/B tests (PipeWire and WASAPI)
+- [x] PCM WAV recording
+- [x] Original vs. processed recording files
 - [ ] Basic audio diagnostics
 
 ### Phase 3 — Audio Processing
 
 - [x] Offline RNNoise processing for supported WAV files
-- [ ] Live noise suppression
-- [ ] Automatic gain control
-- [ ] Noise gate
-- [ ] Compression
+- [x] Stateful DSP core with RNNoise noise suppression
+- [x] Automatic gain control, noise gate, and compression stages in the core
+- [x] Processing presets
 - [ ] Echo processing
 - [ ] Reverberation reduction
-- [ ] Processing presets
 
 ### Phase 4 — Real-Time Processing
 

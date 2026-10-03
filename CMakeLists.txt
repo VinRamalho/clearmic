@@ -97,7 +97,8 @@ target_include_directories(clearmic_core PUBLIC audio-engine/core/include)
 target_link_libraries(clearmic_core PRIVATE rnnoise)
 
 if(WIN32)
-    add_library(clearmic_platform audio-engine/platform/windows/src/device_manager.cpp)
+    add_library(clearmic_platform audio-engine/platform/windows/src/device_manager.cpp
+        audio-engine/platform/windows/src/live_capture.cpp)
     target_include_directories(clearmic_platform PUBLIC audio-engine/platform/windows/include)
     target_link_libraries(clearmic_platform PUBLIC clearmic_core ole32 uuid)
     target_compile_definitions(clearmic_platform PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)

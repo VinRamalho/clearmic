@@ -1,10 +1,17 @@
 #pragma once
 
 #include "clearmic/audio/device.hpp"
+#include "clearmic/audio/pcm.hpp"
+
+#include <cstdint>
+#include <string>
 
 namespace clearmic::platform::windows {
 class DeviceManager final : public audio::IAudioDeviceManager {
 public:
     [[nodiscard]] std::vector<audio::AudioDevice> input_devices() override;
 };
+
+[[nodiscard]] audio::AudioComparison capture_processed_audio(const std::string& device_id,
+                                                             std::uint32_t duration_seconds);
 }

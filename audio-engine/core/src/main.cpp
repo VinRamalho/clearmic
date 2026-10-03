@@ -5,6 +5,8 @@
 #include <iostream>
 #include <memory>
 #include <exception>
+#include <cstdint>
+#include <string>
 #include <string_view>
 
 #ifdef _WIN32
@@ -19,7 +21,7 @@ void print_usage() {
                  "Usage:\n"
                  "  clearmic-cli devices\n"
                  "  clearmic-cli process <input.wav> <processed.wav>\n"
-#ifdef __linux__
+#if defined(__linux__) || defined(_WIN32)
                  "  clearmic-cli record-test <seconds> <original.wav> <processed.wav> [device-id]\n"
 #endif
                  ;
@@ -27,15 +29,23 @@ void print_usage() {
 }
 
 int main(const int argc, char** argv) {
-#ifdef __linux__
+#if defined(__linux__) || defined(_WIN32)
     if ((argc == 5 || argc == 6) && std::string_view(argv[1]) == "record-test") {
         try {
             const auto seconds = static_cast<std::uint32_t>(std::stoul(argv[2]));
             const std::string device_id = argc == 6 ? argv[5] : "";
+#ifdef _WIN32
+            auto comparison = clearmic::platform::windows::capture_processed_audio(device_id, seconds);
+#else
             auto comparison = clearmic::platform::pipewire::capture_processed_audio(device_id, seconds);
+#endif
             clearmic::audio::write_pcm16_wav(argv[3], comparison.original);
             clearmic::audio::write_pcm16_wav(argv[4], comparison.processed);
+#ifdef _WIN32
+            std::cout << "Recorded " << seconds << " seconds from the selected Windows microphone.\n"
+#else
             std::cout << "Recorded " << seconds << " seconds from the selected PipeWire microphone.\n"
+#endif
                       << "Original: " << argv[3] << "\nProcessed: " << argv[4] << "\n";
         } catch (const std::exception& error) {
             std::cerr << "Could not record microphone test: " << error.what() << "\n";
