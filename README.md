@@ -173,7 +173,7 @@ ClearMic is being designed around proven audio-processing techniques rather than
 
 The current processor uses RNNoise for noise suppression. The stateful chain also provides input gain, a noise gate, compression, and RMS-based automatic gain control.
 
-The Linux live pipeline uses the shared stateful processor chain. Windows currently processes captured A/B samples after recording; it does not yet run a continuous stream into a virtual endpoint. WebRTC Audio Processing Module has not been integrated.
+Both Linux and Windows use the shared stateful processor chain for live processing. Linux publishes a PipeWire virtual microphone source. Windows captures the selected WASAPI microphone and renders processed audio to a selected playback endpoint; another application can consume that stream as a microphone through a separately installed compatible virtual audio cable. ClearMic does not install a Windows virtual driver, and this route still needs native hardware and consumer-application validation. WebRTC Audio Processing Module has not been integrated.
 
 The Linux live pipeline is:
 
