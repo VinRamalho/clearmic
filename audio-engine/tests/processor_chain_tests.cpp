@@ -90,9 +90,11 @@ void run_processor_chain_tests() {
     synthetic_settings.input_gain_db = 6.0F;
     ProcessorChain gain_processor(1, synthetic_settings);
     (void)process_constant_frame(gain_processor, 1000); // Fills the initial latency frame.
-    const auto gained = process_constant_frame(gain_processor, 1000);
+    auto gained = process_constant_frame(gain_processor, 1000);
+    for (int frame_index = 0; frame_index < 60; ++frame_index)
+        gained = process_constant_frame(gain_processor, 1000);
     require(gained.back() >= 1950 && gained.back() <= 2050,
-            "Input gain should reach the configured +6 dB level on a steady synthetic signal");
+            "Input gain should reach the configured +6 dB level without an abrupt gain step");
 
     synthetic_settings.input_gain_db = 0.0F;
     synthetic_settings.noise_gate_enabled = true;
@@ -126,7 +128,12 @@ void run_processor_chain_tests() {
     synthetic_settings.automatic_gain_enabled = true;
     ProcessorChain agc_processor(1, synthetic_settings);
     (void)process_constant_frame(agc_processor, 1000);
-    const auto leveled = process_constant_frame(agc_processor, 1000);
+    const auto initial_agc = process_constant_frame(agc_processor, 1000);
+    require(initial_agc.back() > 1400 && initial_agc.back() < 2200,
+            "Automatic gain should recover gradually instead of jumping to its target within one frame");
+    auto leveled = initial_agc;
+    for (int frame_index = 0; frame_index < 60; ++frame_index)
+        leveled = process_constant_frame(agc_processor, 1000);
     require(leveled.back() >= 7900 && leveled.back() <= 8100,
-            "Automatic gain should raise a steady synthetic signal toward its configured RMS target");
+            "Automatic gain should reach its configured RMS target after the recovery interval");
 }

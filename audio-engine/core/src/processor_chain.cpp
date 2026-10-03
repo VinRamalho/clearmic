@@ -105,9 +105,12 @@ void ProcessorChain::process_frame() noexcept {
         gate_gain_ = 1.0F;
     }
     // Smooth gain changes to avoid clicks when a setting or preset changes.
-    constexpr float gain_smoothing = 0.02F;
+    constexpr float gain_attack_smoothing = 0.004158F; // 5 ms at 48 kHz: reduce gain promptly on loud input.
+    constexpr float gain_release_smoothing = 0.000208F; // 100 ms at 48 kHz: recover gain without pumping.
     const auto samples_per_channel = output_frame_.size();
     for (std::size_t index = 0; index < samples_per_channel; ++index) {
+        const auto gain_smoothing = requested_gain < gain_linear_
+            ? gain_attack_smoothing : gain_release_smoothing;
         gain_linear_ += (requested_gain - gain_linear_) * gain_smoothing;
         float sample = static_cast<float>(output_frame_[index]) * gain_linear_;
         const auto magnitude = std::abs(sample);
