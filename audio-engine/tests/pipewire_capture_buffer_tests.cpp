@@ -1,5 +1,6 @@
 #include "clearmic/platform/linux/capture_buffer.hpp"
 #include "clearmic/platform/linux/realtime_audio_ring.hpp"
+#include "clearmic/platform/linux/source_buffer.hpp"
 
 #include <algorithm>
 #include <array>
@@ -20,6 +21,7 @@ void require(const bool condition, const char* message) {
 
 int main() {
     using clearmic::platform::pipewire::aligned_pcm16_chunk;
+    using clearmic::platform::pipewire::source_sample_count;
     using clearmic::platform::pipewire::valid_capture_chunk_range;
 
     require(valid_capture_chunk_range(0, 0, 0), "Empty range at an empty buffer should be valid");
@@ -33,6 +35,12 @@ int main() {
             "PCM16 aligned chunks should be accepted");
     require(!aligned_pcm16_chunk(0, 1) && !aligned_pcm16_chunk(0, 3) && !aligned_pcm16_chunk(1, 2),
             "Unaligned PCM16 offsets and sizes should be rejected");
+    require(source_sample_count(480, 8192) == 480,
+            "The requested payload should be used when the allocation has spare capacity");
+    require(source_sample_count(0, 8192) == 4096,
+            "A missing request should fall back to the complete allocation capacity");
+    require(!source_sample_count(4097, 8192), "Requests beyond the mapped allocation should be rejected");
+    require(!source_sample_count(1, 8191), "A PCM16 allocation with an odd byte count should be rejected");
 
     using clearmic::platform::pipewire::RealtimeAudioRing;
     RealtimeAudioRing ring;

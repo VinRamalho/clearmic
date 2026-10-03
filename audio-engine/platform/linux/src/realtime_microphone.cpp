@@ -1,5 +1,6 @@
 #include "clearmic/platform/linux/device_manager.hpp"
 #include "clearmic/platform/linux/realtime_audio_ring.hpp"
+#include "clearmic/platform/linux/source_buffer.hpp"
 
 #include "clearmic/audio/processor_chain.hpp"
 
@@ -216,19 +217,25 @@ void source_process(void* data) {
         return;
     }
     auto& d = b->datas[0];
-    const auto capacity = d.maxsize / sizeof(std::int16_t);
-    if (capacity > session.source_silence.size()) {
+    const auto sample_count = source_sample_count(buffer->requested, d.maxsize);
+    if (!sample_count || *sample_count > std::numeric_limits<std::uint32_t>::max() / sizeof(std::int16_t)) {
         const bool failed = set_stream_error(session, StreamError::oversized_source_buffer);
         pw_stream_queue_buffer(session.source, buffer);
         if (failed) pw_main_loop_quit(session.loop);
         return;
     }
     auto* output = static_cast<std::int16_t*>(d.data);
-    if (session.ring.pop(output, capacity, session.source_silence.data()) < capacity)
-        session.source_underruns.fetch_add(1, std::memory_order_relaxed);
+    bool underrun = false;
+    for (std::size_t offset = 0; offset < *sample_count;) {
+        const auto count = std::min(session.source_silence.size(), *sample_count - offset);
+        if (session.ring.pop(output + offset, count, session.source_silence.data()) < count)
+            underrun = true;
+        offset += count;
+    }
+    if (underrun) session.source_underruns.fetch_add(1, std::memory_order_relaxed);
     d.chunk->offset = 0;
     d.chunk->stride = sizeof(std::int16_t);
-    d.chunk->size = static_cast<std::uint32_t>(capacity * sizeof(std::int16_t));
+    d.chunk->size = static_cast<std::uint32_t>(*sample_count * sizeof(std::int16_t));
     pw_stream_queue_buffer(session.source, buffer);
 }
 
