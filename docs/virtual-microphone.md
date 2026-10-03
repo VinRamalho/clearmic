@@ -48,4 +48,4 @@ The next Windows architecture milestone is to compare candidate driver implement
 
 ## Current status
 
-Linux provides the source via the `serve` command. Windows still has no ClearMic virtual endpoint. PipeWire runtime verification with a physical microphone and consumer application remains outstanding on a native Linux desktop.
+Linux's `serve` command publishes the PipeWire source, but non-silent delivery to a consumer was not reproducible across clean WSL sessions; the service reports the source and links while the source callback can remain unscheduled. Treat Linux application routing as unverified until a repeatable integration test and native desktop consumer test pass. Windows still has no ClearMic virtual endpoint.
