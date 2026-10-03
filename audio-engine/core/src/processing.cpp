@@ -37,10 +37,13 @@ PcmAudio suppress_noise(const PcmAudio& input) {
         if (frame > 0) processed.insert(processed.end(), output_block.begin(), output_block.end());
     }
 
-    // RNNoise returns the previous frame; one zero frame flushes the last input.
-    std::fill(source_block.begin(), source_block.end(), 0);
-    processor.process(source_block, output_block);
-    processed.insert(processed.end(), output_block.begin(), output_block.end());
+    // RNNoise returns the previous frame; discard its startup frame and flush
+    // the final padded input frame without adding another full output frame.
+    if (processing_frames > 1) {
+        std::fill(source_block.begin(), source_block.end(), 0);
+        processor.process(source_block, output_block);
+        processed.insert(processed.end(), output_block.begin(), output_block.end());
+    }
     processed.resize(input.samples.size());
     return PcmAudio{input.sample_rate_hz, input.channels, std::move(processed)};
 }

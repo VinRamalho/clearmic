@@ -3,6 +3,7 @@
 #include <optional>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 
 void run_wav_tests();
 
@@ -20,7 +21,12 @@ int main() {
     try {
         run_wav_tests();
     } catch (const std::exception& error) {
-        std::cerr << error.what() << '\n';
+        const std::string message = "ClearMic test failure: " + std::string(error.what());
+        std::cerr << message << '\n';
+#ifdef GITHUB_ACTIONS
+        std::cout << "::error::" << message << '\n';
+        std::cout << "::error file=audio-engine/tests/wav_tests.cpp::" << message << '\n';
+#endif
         return 7;
     }
     return 0;
