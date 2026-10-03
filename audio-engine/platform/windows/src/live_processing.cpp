@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -98,7 +99,7 @@ ComPtr<IAudioClient> activate_audio_client(IMMDevice* device, const char* descri
 }
 
 void drain_capture(IAudioCaptureClient* capture, audio::ProcessorChain& processor,
-                   AudioRing& queue, bool& saw_overrun) {
+                   AudioRing& queue, bool& saw_overrun, LiveProcessingMetrics& metrics) {
     UINT32 packet_frames = 0;
     check_hresult(capture->GetNextPacketSize(&packet_frames), "Read live microphone packet size");
     std::array<std::int16_t, 8192> input{};
@@ -119,6 +120,20 @@ void drain_capture(IAudioCaptureClient* capture, audio::ProcessorChain& processo
             input[index] = (flags & AUDCLNT_BUFFERFLAGS_SILENT) != 0 ? 0 : reinterpret_cast<const std::int16_t*>(data)[index];
         processor.process(std::span<const std::int16_t>(input).first(frames),
                           std::span<std::int16_t>(output).first(frames));
+        if (frames != 0) {
+            double input_square_sum = 0.0;
+            double output_square_sum = 0.0;
+            for (UINT32 index = 0; index < frames; ++index) {
+                const auto input_value = static_cast<double>(input[index]) / 32768.0;
+                const auto output_value = static_cast<double>(output[index]) / 32768.0;
+                input_square_sum += input_value * input_value;
+                output_square_sum += output_value * output_value;
+            }
+            metrics.input_rms.store(static_cast<float>(std::sqrt(input_square_sum / frames)),
+                                    std::memory_order_relaxed);
+            metrics.output_rms.store(static_cast<float>(std::sqrt(output_square_sum / frames)),
+                                     std::memory_order_relaxed);
+        }
         saw_overrun = queue.push(std::span<const std::int16_t>(output).first(frames)) || saw_overrun;
         check_hresult(capture->ReleaseBuffer(frames), "Release live microphone packet");
         check_hresult(capture->GetNextPacketSize(&packet_frames), "Read next live microphone packet size");
@@ -146,7 +161,7 @@ void render_queued(IAudioClient* client, IAudioRenderClient* render, AudioRing& 
 
 void run_live_processing(const std::string& input_device_id, const std::string& output_device_id,
                          const audio::ProcessingSettings settings, const std::atomic_bool& stop_requested,
-                         const std::function<void()>& on_started) {
+                         LiveProcessingMetrics& metrics, const std::function<void()>& on_started) {
     if (input_device_id.empty() || output_device_id.empty())
         throw std::invalid_argument("Select both a microphone and a virtual-cable playback endpoint");
 
@@ -222,7 +237,7 @@ void run_live_processing(const std::string& input_device_id, const std::string& 
         const bool render_ready = wait == WAIT_OBJECT_0 + 1 ||
             WaitForSingleObject(render_event.get(), 0) == WAIT_OBJECT_0;
         if (render_ready) render_queued(output_client.get(), render.get(), queue, render_buffer);
-        if (capture_ready) drain_capture(capture.get(), processor, queue, saw_overrun);
+        if (capture_ready) drain_capture(capture.get(), processor, queue, saw_overrun, metrics);
         if (saw_overrun) throw std::runtime_error("Live audio output could not keep up; stop and restart the route");
     }
 }

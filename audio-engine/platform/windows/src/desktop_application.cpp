@@ -92,6 +92,7 @@ struct Application {
     std::thread live_route_thread;
     std::atomic_bool shutting_down{};
     std::atomic_bool stop_live_route{};
+    LiveProcessingMetrics live_metrics;
     bool recording{};
     bool live_routing{};
     bool refreshing_devices{};
@@ -416,7 +417,11 @@ void toggle_live_route(Application& app) {
     const auto output_name = to_wide(app.render_devices[static_cast<std::size_t>(output_index)].name);
     const auto settings = current_settings(app);
     app.stop_live_route.store(false, std::memory_order_relaxed);
+    app.live_metrics.input_rms.store(0.0F, std::memory_order_relaxed);
+    app.live_metrics.output_rms.store(0.0F, std::memory_order_relaxed);
     app.live_routing = true;
+    SendMessageW(app.input_level, PBM_SETPOS, 0, 0);
+    SendMessageW(app.output_level, PBM_SETPOS, 0, 0);
     SetWindowTextW(app.status, (L"Starting live processing to " + output_name +
         L". Other apps must select its paired virtual microphone endpoint.").c_str());
     update_controls(app);
@@ -425,7 +430,7 @@ void toggle_live_route(Application& app) {
         app.live_route_thread = std::thread([&app, window, input_id, output_id, settings] {
             auto* completion = new LiveRouteCompletion;
             try {
-                run_live_processing(input_id, output_id, settings, app.stop_live_route, [window] {
+                run_live_processing(input_id, output_id, settings, app.stop_live_route, app.live_metrics, [window] {
                     PostMessageW(window, live_route_started_message, 0, 0);
                 });
                 completion->message = L"Live microphone processing stopped.";
@@ -525,10 +530,10 @@ void initialize_controls(Application& app) {
     SendMessageW(app.input_gain, TBM_SETTICFREQ, 3, 0);
     SendMessageW(app.input_gain, TBM_SETPOS, TRUE, 0);
 
-    add_label(app, L"Last sample input", 24, 520, 130);
+    add_label(app, L"Input level", 24, 520, 130);
     add_control(app, PROGRESS_CLASSW, L"", PBS_SMOOTH, 160, 520, 544, 20, input_meter);
     app.input_level = GetDlgItem(app.window, input_meter);
-    add_label(app, L"Last processed sample", 24, 548, 130);
+    add_label(app, L"Processed output", 24, 548, 130);
     add_control(app, PROGRESS_CLASSW, L"", PBS_SMOOTH, 160, 548, 544, 20, output_meter);
     app.output_level = GetDlgItem(app.window, output_meter);
     SendMessageW(app.input_level, PBM_SETRANGE32, 0, 100);
@@ -551,6 +556,7 @@ void initialize_controls(Application& app) {
     app.settings_file = configuration_file();
     load_settings(app);
     SetTimer(app.window, 1, 3000, nullptr);
+    SetTimer(app.window, 2, 80, nullptr);
 }
 
 LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
@@ -568,6 +574,14 @@ LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPAR
         return 0;
     case WM_TIMER:
         if (wparam == 1) refresh_devices(*app);
+        else if (wparam == 2 && app->live_routing) {
+            const auto input = app->live_metrics.input_rms.load(std::memory_order_relaxed);
+            const auto output = app->live_metrics.output_rms.load(std::memory_order_relaxed);
+            SendMessageW(app->input_level, PBM_SETPOS,
+                         static_cast<WPARAM>(std::clamp(input * 100.0F, 0.0F, 100.0F)), 0);
+            SendMessageW(app->output_level, PBM_SETPOS,
+                         static_cast<WPARAM>(std::clamp(output * 100.0F, 0.0F, 100.0F)), 0);
+        }
         return 0;
     case WM_HSCROLL:
         if (reinterpret_cast<HWND>(lparam) == app->input_gain) {
@@ -672,6 +686,7 @@ LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPAR
         if (app->capture_thread.joinable()) app->capture_thread.join();
         PlaySoundW(nullptr, nullptr, 0);
         KillTimer(window, 1);
+        KillTimer(window, 2);
         DestroyWindow(window);
         return 0;
     case WM_DESTROY:

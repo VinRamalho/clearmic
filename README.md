@@ -4,7 +4,7 @@
 
 ClearMic is an open-source, cross-platform desktop application designed to improve microphone voice quality in real time.
 
-> **Development status:** the C++20 device model, Windows WASAPI and Linux PipeWire audio backends, shared stateful DSP chain, and CI builds for Windows and Ubuntu 24.04 are in place. Both platforms provide CLI `record-test` A/B capture. Linux has a GTK panel to discover/select a PipeWire microphone, persist settings, start/stop the `ClearMic Virtual Microphone` service, view live input/output RMS meters, record and compare samples, refresh devices while idle, recover from service failures, and optionally run in the system tray. Windows has a native panel for WASAPI input and playback endpoint selection, persistent processing controls, A/B capture/playback, and start/stop continuous processing into a selected playback endpoint. Using that stream as a microphone still requires a separately installed compatible virtual audio cable; the MSI does not install a driver, and native cable routing remains unverified. Linux reads Bluetooth battery percentages from BlueZ when available; Windows and the tested USB receiver do not currently provide battery telemetry. The CPack/WiX MSI passes CI installation, launch, and removal checks. Native audio quality and latency validation remain incomplete. The Ubuntu `.deb` includes the GUI. This is an early development project, not a finished product.
+> **Development status:** the C++20 device model, Windows WASAPI and Linux PipeWire audio backends, shared stateful DSP chain, and CI builds for Windows and Ubuntu 24.04 are in place. Both platforms provide CLI `record-test` A/B capture. Linux has a GTK panel to discover/select a PipeWire microphone, persist settings, start/stop the `ClearMic Virtual Microphone` service, view live input/output RMS meters, record and compare samples, refresh devices while idle, recover from service failures, and optionally run in the system tray. Windows has a native panel for WASAPI input and playback endpoint selection, persistent processing controls, A/B capture/playback, live input/output meters during continuous routing, and start/stop controls for processing into a selected playback endpoint. Using that stream as a microphone still requires a separately installed compatible virtual audio cable; the MSI does not install a driver, and native cable routing remains unverified. Linux reads Bluetooth battery percentages from BlueZ when available; Windows and the tested USB receiver do not currently provide battery telemetry. The CPack/WiX MSI passes CI installation, launch, and removal checks. Native audio quality and latency validation remain incomplete. The Ubuntu `.deb` includes the GUI. This is an early development project, not a finished product.
 
 It currently targets background noise and inconsistent microphone levels while preserving a natural-sounding voice. Acoustic echo cancellation and room reverberation reduction are not implemented.
 
@@ -407,7 +407,7 @@ The native ClearMic desktop panel discovers active WASAPI microphones, remembers
 
 The supported development build uses CMake and Visual Studio / MSVC.
 
-`record-test` captures up to 30 seconds and writes original/processed WAV files. The recorded sample is converted to 48 kHz mono PCM and processed after capture ends. The Windows panel applies the selected Natural/Meeting/Strong profile and individual controls to its A/B capture. Input/output level bars show the last recorded sample. The Windows live route does not yet publish live meter values or provide its own virtual-microphone endpoint.
+`record-test` captures up to 30 seconds and writes original/processed WAV files. The recorded sample is converted to 48 kHz mono PCM and processed after capture ends. The Windows panel applies the selected Natural/Meeting/Strong profile and individual controls to its A/B capture. Its input/output level bars show live RMS levels during continuous routing and the last recorded sample while idle. The Windows live route still requires an external virtual-cable driver to expose the processed audio as a microphone.
 
 Build from a Visual Studio Developer PowerShell with:
 
@@ -490,7 +490,7 @@ Build the Ubuntu `.deb` from an Ubuntu 24.04 environment using `packaging/linux/
 
 - [x] Desktop UI (GTK on Linux and native Win32 on Windows)
 - [x] Device selector
-- [x] Input/output level meters (Linux live stream and last A/B sample on Windows)
+- [x] Input/output level meters (live stream on both platforms; last A/B sample while idle)
 - [x] Processing controls
 - [x] Audio profiles
 - [x] A/B recording test

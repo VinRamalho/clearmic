@@ -23,12 +23,17 @@ struct CaptureDiagnostics {
     std::optional<double> processing_wall_time_ms;
 };
 
+struct LiveProcessingMetrics {
+    std::atomic<float> input_rms{};
+    std::atomic<float> output_rms{};
+};
+
 [[nodiscard]] audio::AudioComparison capture_processed_audio(const std::string& device_id,
                                                              std::uint32_t duration_seconds,
                                                              audio::ProcessingSettings settings = {},
                                                              CaptureDiagnostics* diagnostics = nullptr);
 void run_live_processing(const std::string& input_device_id, const std::string& output_device_id,
                          audio::ProcessingSettings settings, const std::atomic_bool& stop_requested,
-                         const std::function<void()>& on_started = {});
+                         LiveProcessingMetrics& metrics, const std::function<void()>& on_started = {});
 int run_desktop_application();
 }
