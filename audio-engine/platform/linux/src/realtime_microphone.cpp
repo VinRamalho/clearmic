@@ -1,4 +1,5 @@
 #include "clearmic/platform/linux/device_manager.hpp"
+#include "clearmic/platform/linux/realtime_audio_ring.hpp"
 
 #include "clearmic/audio/processor_chain.hpp"
 
@@ -21,9 +22,6 @@
 
 namespace clearmic::platform::pipewire {
 namespace {
-constexpr std::size_t ring_capacity = 1U << 15U;
-static_assert((ring_capacity & (ring_capacity - 1U)) == 0);
-
 enum class StreamError : std::uint8_t {
     none,
     writing_detail,
@@ -37,44 +35,10 @@ enum class StreamError : std::uint8_t {
     oversized_source_buffer,
 };
 
-// Single producer (capture callback), single consumer (virtual source callback).
-struct AudioRing {
-    std::array<std::int16_t, ring_capacity> samples{};
-    std::atomic<std::uint64_t> write_index{};
-    std::atomic<std::uint64_t> read_index{};
-
-    bool push(const std::int16_t* input, std::size_t count) noexcept {
-        auto write = write_index.load(std::memory_order_relaxed);
-        auto read = read_index.load(std::memory_order_acquire);
-        if (count > ring_capacity) {
-            input += count - ring_capacity;
-            count = ring_capacity;
-        }
-        const bool overflow = write + count - read > ring_capacity;
-        if (overflow) {
-            const auto drop = write + count - read - ring_capacity;
-            read_index.store(read + drop, std::memory_order_release);
-        }
-        for (std::size_t i = 0; i < count; ++i) samples[(write + i) & (ring_capacity - 1U)] = input[i];
-        write_index.store(write + count, std::memory_order_release);
-        return overflow;
-    }
-
-    std::size_t pop(std::int16_t* output, std::size_t count, const std::int16_t* silence) noexcept {
-        const auto read = read_index.load(std::memory_order_relaxed);
-        const auto write = write_index.load(std::memory_order_acquire);
-        const auto available = static_cast<std::size_t>(std::min<std::uint64_t>(write - read, count));
-        for (std::size_t i = 0; i < available; ++i) output[i] = samples[(read + i) & (ring_capacity - 1U)];
-        read_index.store(read + available, std::memory_order_release);
-        std::copy_n(silence, count - available, output + available);
-        return available;
-    }
-};
-
 struct Session {
     pw_main_loop* loop{};
     audio::ProcessorChain processor{1};
-    AudioRing ring;
+    RealtimeAudioRing ring;
     std::array<std::int16_t, 8192> callback_output{};
     std::array<std::int16_t, 8192> source_silence{};
     std::atomic<std::uint64_t> capture_overruns{};
@@ -234,7 +198,7 @@ void capture_process(void* data) {
         session.input_rms.store(static_cast<float>(std::sqrt(input_square_sum / count)), std::memory_order_relaxed);
         session.output_rms.store(static_cast<float>(std::sqrt(output_square_sum / count)), std::memory_order_relaxed);
     }
-    if (session.ring.push(session.callback_output.data(), count))
+    if (!session.ring.push(session.callback_output.data(), count))
         session.capture_overruns.fetch_add(1, std::memory_order_relaxed);
     session.processed_samples.fetch_add(count, std::memory_order_relaxed);
     pw_stream_queue_buffer(session.capture, buffer);
