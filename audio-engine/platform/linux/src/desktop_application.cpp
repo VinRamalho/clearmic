@@ -549,6 +549,10 @@ void launch_service(Application& app) {
             g_clear_object(&state.service);
             refresh_devices(state);
             if (!exited_cleanly && state.reconnect_enabled && !state.closing) {
+                const int available_index = selected_index(state);
+                state.active_device_id = available_index >= 0
+                    ? state.inputs[static_cast<std::size_t>(available_index)].id
+                    : std::string{};
                 if (wait_error) g_error_free(wait_error);
                 const unsigned int delay = std::min(2U << std::min(state.restart_attempt, 4U), 30U);
                 ++state.restart_attempt;
