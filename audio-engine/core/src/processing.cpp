@@ -3,11 +3,22 @@
 #include "clearmic/audio/noise_suppressor.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 #include <utility>
 #include <vector>
 
 namespace clearmic::audio {
+
+double rms_normalized(const PcmAudio& input) noexcept {
+    if (input.samples.empty()) return 0.0;
+    long double square_sum = 0.0L;
+    for (const auto sample : input.samples) {
+        const auto normalized = static_cast<long double>(sample) / 32768.0L;
+        square_sum += normalized * normalized;
+    }
+    return std::sqrt(static_cast<double>(square_sum / static_cast<long double>(input.samples.size())));
+}
 
 PcmAudio suppress_noise(const PcmAudio& input) {
     if (input.sample_rate_hz != 48000)

@@ -41,6 +41,11 @@ clearmic::audio::PcmAudio make_audio(const std::uint32_t sample_rate, const std:
 
 void run_wav_tests() {
     using namespace clearmic::audio;
+    require(rms_normalized(PcmAudio{}) == 0.0, "Empty PCM should report zero RMS");
+    PcmAudio rms_probe{48000, 1, std::vector<std::int16_t>(100, 16384)};
+    require(std::abs(rms_normalized(rms_probe) - 0.5) < 0.0001,
+            "Normalized PCM RMS should use signed 16-bit full scale");
+
     const auto root = std::filesystem::temp_directory_path() / "clearmic-audio-tests";
     std::filesystem::create_directories(root);
     const auto mono_path = root / "mono.wav";

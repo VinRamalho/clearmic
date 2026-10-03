@@ -1,4 +1,6 @@
 #include "clearmic/platform/linux/device_manager.hpp"
+#include "clearmic/audio/processing.hpp"
+#include "clearmic/audio/wav.hpp"
 
 #include <gtk/gtk.h>
 #include <gst/gst.h>
@@ -463,7 +465,27 @@ void on_record_sample(GtkButton*, gpointer data) {
                 state.original_path.clear();
                 state.processed_path.clear();
             } else {
-                gtk_label_set_text(GTK_LABEL(state.service_status), "A/B sample ready. Play the original or processed recording.");
+                try {
+                    const auto original = audio::read_pcm16_wav(state.original_path);
+                    const auto processed = audio::read_pcm16_wav(state.processed_path);
+                    const auto input_rms = audio::rms_normalized(original);
+                    const auto output_rms = audio::rms_normalized(processed);
+                    gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(state.input_meter), input_rms);
+                    gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(state.output_meter), output_rms);
+                    char input_text[32]{};
+                    char output_text[32]{};
+                    std::snprintf(input_text, sizeof(input_text), "Input %.1f%% RMS", input_rms * 100.0);
+                    std::snprintf(output_text, sizeof(output_text), "Processed %.1f%% RMS", output_rms * 100.0);
+                    gtk_progress_bar_set_text(GTK_PROGRESS_BAR(state.input_meter), input_text);
+                    gtk_progress_bar_set_text(GTK_PROGRESS_BAR(state.output_meter), output_text);
+                    gchar* message = input_rms < 0.001
+                        ? g_strdup_printf("A/B sample ready, but little or no microphone signal was detected (input RMS %.2f%%). Check mute, system microphone permissions, and the selected input.", input_rms * 100.0)
+                        : g_strdup_printf("A/B sample ready. Microphone activity detected (input RMS %.2f%%, processed RMS %.2f%%). Play the original or processed recording.", input_rms * 100.0, output_rms * 100.0);
+                    gtk_label_set_text(GTK_LABEL(state.service_status), message);
+                    g_free(message);
+                } catch (const std::exception& error) {
+                    gtk_label_set_text(GTK_LABEL(state.service_status), error.what());
+                }
             }
             g_clear_object(&state.test_capture);
             gtk_widget_set_sensitive(state.devices, TRUE);

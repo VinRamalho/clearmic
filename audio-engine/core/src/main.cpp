@@ -140,12 +140,19 @@ int main(const int argc, char** argv) {
 #endif
             clearmic::audio::write_pcm16_wav(argv[3], comparison.original);
             clearmic::audio::write_pcm16_wav(argv[4], comparison.processed);
+            const auto input_rms = clearmic::audio::rms_normalized(comparison.original);
+            const auto output_rms = clearmic::audio::rms_normalized(comparison.processed);
 #ifdef _WIN32
             std::cout << "Recorded " << seconds << " seconds from the selected Windows microphone.\n"
 #else
             std::cout << "Recorded " << seconds << " seconds from the selected PipeWire microphone.\n"
 #endif
                       << "Original: " << argv[3] << "\nProcessed: " << argv[4] << "\n";
+            std::cout << std::fixed << std::setprecision(2)
+                      << "Input RMS: " << input_rms * 100.0 << "%\n"
+                      << "Processed RMS: " << output_rms * 100.0 << "%\n";
+            if (input_rms < 0.001)
+                std::cout << "Warning: Little or no microphone signal detected; check mute, OS microphone permissions, and the selected input.\n";
 #ifdef _WIN32
             if (diagnostics.buffer_frames)
                 std::cout << "WASAPI capture buffer: " << *diagnostics.buffer_frames << " frames\n";

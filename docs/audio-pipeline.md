@@ -6,7 +6,7 @@ The CLI currently reads integer PCM16 WAV, runs Xiph RNNoise, and writes a new P
 
 The model and source revision are pinned and SHA-256 verified during CMake configuration. CMake stores them under the build directory and copies the upstream `COPYING` text into `build/licenses/rnnoise`. An initial configure therefore needs internet access unless the archives are already cached.
 
-The RNNoise frame API processes 480 samples per channel at 48 kHz, a 10 ms frame. Its one-frame processing delay is preserved and flushed for offline files so output duration matches input duration.
+The RNNoise frame API processes 480 samples per channel at 48 kHz, a 10 ms frame. Its one-frame processing delay is preserved and flushed for offline files so output duration matches input duration. A/B recordings report normalized RMS for the original and processed audio in the CLI and desktop status; when original RMS is below 0.1% of full scale (−60 dBFS), both warn that little or no microphone signal was captured and suggest checking mute, OS microphone permissions, and device selection.
 
 ## Stateful live processor core
 

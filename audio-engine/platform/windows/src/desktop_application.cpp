@@ -1,5 +1,6 @@
 #include "clearmic/platform/windows/device_manager.hpp"
 
+#include "clearmic/audio/processing.hpp"
 #include "clearmic/audio/wav.hpp"
 
 #include <windows.h>
@@ -496,16 +497,6 @@ void save_processing_settings(Application& app) {
     write_integer_setting(app, L"input-gain-db", static_cast<int>(settings.input_gain_db));
 }
 
-double rms_level(const audio::PcmAudio& audio) {
-    if (audio.samples.empty()) return 0.0;
-    long double square_sum = 0.0;
-    for (const auto sample : audio.samples) {
-        const long double normalized = static_cast<long double>(sample) / 32768.0L;
-        square_sum += normalized * normalized;
-    }
-    return std::sqrt(static_cast<double>(square_sum / audio.samples.size()));
-}
-
 void begin_recording(Application& app) {
     const int index = selected_device_index(app);
     if (index < 0 || app.recording) return;
@@ -530,10 +521,21 @@ void begin_recording(Application& app) {
                 auto comparison = capture_processed_audio(device_id, 5, settings, &diagnostics);
                 audio::write_pcm16_wav(app.original_file, comparison.original);
                 audio::write_pcm16_wav(app.processed_file, comparison.processed);
-                completion->input_rms = rms_level(comparison.original);
-                completion->output_rms = rms_level(comparison.processed);
+                completion->input_rms = audio::rms_normalized(comparison.original);
+                completion->output_rms = audio::rms_normalized(comparison.processed);
                 completion->success = true;
-                completion->message = L"A/B sample ready";
+                const auto input_percent = std::to_wstring(completion->input_rms * 100.0);
+                const auto output_percent = std::to_wstring(completion->output_rms * 100.0);
+                auto trim_percent = [](std::wstring value) {
+                    const auto decimal = value.find(L'.');
+                    if (decimal != std::wstring::npos) value.resize(decimal + 2);
+                    return value + L"%";
+                };
+                completion->message = completion->input_rms < 0.001
+                    ? L"A/B sample ready, but little or no microphone signal was detected. Check mute, Windows microphone privacy, and the selected input."
+                    : L"A/B sample ready. Microphone activity was detected.";
+                completion->message += L" Input RMS: " + trim_percent(input_percent) +
+                    L" · processed RMS: " + trim_percent(output_percent);
                 if (diagnostics.buffer_frames)
                     completion->message += L" · WASAPI buffer: " + std::to_wstring(*diagnostics.buffer_frames) + L" frames";
                 if (diagnostics.stream_latency_ms) {
