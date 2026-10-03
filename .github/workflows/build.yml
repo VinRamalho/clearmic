@@ -38,10 +38,15 @@ jobs:
       - name: Install and remove Windows installer
         shell: pwsh
         run: |
+          $installerLog = Join-Path $env:RUNNER_TEMP "clearmic-msi.log"
           $installer = Get-ChildItem -Path build/installer -Filter *.msi | Select-Object -First 1
           if (-not $installer) { throw "CPack did not produce a Windows MSI" }
-          & msiexec.exe /i $installer.FullName /qn /norestart
-          if ($LASTEXITCODE -ne 0) { throw "MSI installation failed with exit code $LASTEXITCODE" }
+          & msiexec.exe /i $installer.FullName /qn /norestart /l*v $installerLog
+          $installExitCode = $LASTEXITCODE
+          if ($installExitCode -ne 0) {
+            Get-Content $installerLog -Tail 80
+            throw "MSI installation failed with exit code $installExitCode"
+          }
           $registryPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
           $product = Get-ChildItem $registryPath | Get-ItemProperty | Where-Object DisplayName -Like "*ClearMic*" | Select-Object -First 1
           if (-not $product) { throw "Windows Installer did not register ClearMic" }
@@ -61,10 +66,21 @@ jobs:
             Stop-Process -Id $desktopProcess.Id -Force
             throw "Installed desktop application did not close after a window-close request"
           }
-          & msiexec.exe /x $installer.FullName /qn /norestart
-          if ($LASTEXITCODE -ne 0) { throw "MSI removal failed with exit code $LASTEXITCODE" }
+          & msiexec.exe /x $installer.FullName /qn /norestart /l*v $installerLog
+          $removeExitCode = $LASTEXITCODE
+          if ($removeExitCode -ne 0) {
+            Get-Content $installerLog -Tail 80
+            throw "MSI removal failed with exit code $removeExitCode"
+          }
           $remainingFiles = Get-ChildItem -LiteralPath $installRoot -File -Recurse -ErrorAction SilentlyContinue
           if ($remainingFiles.Name -contains "clearmic-desktop.exe") { throw "MSI removal left the desktop application installed" }
+      - name: Preserve MSI installation diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: clearmic-windows-msi-log
+          path: ${{ runner.temp }}/clearmic-msi.log
+          retention-days: 3
       - name: Preserve Windows installer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
