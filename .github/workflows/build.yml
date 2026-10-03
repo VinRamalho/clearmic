@@ -18,7 +18,7 @@ jobs:
           Get-Content build.log
           if ($buildExitCode -ne 0) {
             Write-Output "::group::First compiler errors"
-            Get-Content build.log -Tail 80 | ForEach-Object { Write-Output "::error::$_" }
+            Select-String -Path build.log -Pattern 'fatal error|error C[0-9]+|error LNK[0-9]+|FAILED:|LINK : fatal' -Context 1,1 | Select-Object -First 10 | ForEach-Object { Write-Output "::error::$_" }
             Write-Output "::endgroup::"
             Write-Output "::error::Windows build failed with exit code $buildExitCode"
             exit $buildExitCode
