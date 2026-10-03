@@ -5,12 +5,26 @@
 #include "clearmic/audio/processor_chain.hpp"
 
 #include <cstdint>
+#include <functional>
+#include <memory>
 #include <string>
 
 namespace clearmic::platform::pipewire {
 class DeviceManager final : public audio::IAudioDeviceManager {
 public:
     [[nodiscard]] std::vector<audio::AudioDevice> input_devices() override;
+};
+
+class DeviceMonitor final {
+public:
+    explicit DeviceMonitor(std::function<void()> on_change);
+    ~DeviceMonitor();
+    DeviceMonitor(const DeviceMonitor&) = delete;
+    DeviceMonitor& operator=(const DeviceMonitor&) = delete;
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
 };
 
 [[nodiscard]] audio::AudioComparison capture_processed_audio(const std::string& device_id,

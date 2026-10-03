@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <iterator>
 #include <iomanip>
+#include <memory>
 #include <signal.h>
 #include <sstream>
 #include <string>
@@ -47,6 +48,7 @@ struct Application {
     GCancellable* output_cancel{};
     GstElement* player{};
     GtkStatusIcon* tray_icon{};
+    std::unique_ptr<DeviceMonitor> device_monitor;
     guint player_bus_watch{};
     guint device_refresh_source{};
     std::string original_path;
@@ -364,8 +366,21 @@ void on_refresh(GtkButton*, gpointer data) { refresh_devices(*static_cast<Applic
 
 gboolean on_device_refresh_timer(gpointer data) {
     auto& app = *static_cast<Application*>(data);
-    if (!app.service && !app.test_capture && !app.restart_source) refresh_devices(app);
-    return G_SOURCE_CONTINUE;
+    app.device_refresh_source = 0;
+    if (!app.closing && !app.service && !app.test_capture && !app.restart_source) refresh_devices(app);
+    return G_SOURCE_REMOVE;
+}
+
+gboolean apply_device_change(gpointer data) {
+    auto& app = *static_cast<Application*>(data);
+    if (app.closing) return G_SOURCE_REMOVE;
+    if (app.device_refresh_source) g_source_remove(app.device_refresh_source);
+    app.device_refresh_source = g_timeout_add(350, on_device_refresh_timer, &app);
+    return G_SOURCE_REMOVE;
+}
+
+void on_pipewire_devices_changed(Application& app) {
+    g_main_context_invoke(nullptr, apply_device_change, &app);
 }
 
 gboolean on_player_message(GstBus*, GstMessage* message, gpointer user_data) {
@@ -748,6 +763,7 @@ void on_window_destroy(GtkWidget*, gpointer data) {
     }
     if (app.player) gst_element_set_state(app.player, GST_STATE_NULL);
     if (app.device_refresh_source) g_source_remove(app.device_refresh_source);
+    app.device_monitor.reset();
     if (app.player_bus_watch) g_source_remove(app.player_bus_watch);
     g_clear_object(&app.player);
     if (app.tray_icon) gtk_status_icon_set_visible(app.tray_icon, FALSE);
@@ -922,7 +938,7 @@ int run_desktop_application(const char* executable_path) {
     gtk_range_set_value(GTK_RANGE(app.input_gain), stored_input_gain());
     app.updating_preferences = false;
     refresh_devices(app);
-    app.device_refresh_source = g_timeout_add_seconds(3, on_device_refresh_timer, &app);
+    app.device_monitor = std::make_unique<DeviceMonitor>([&app] { on_pipewire_devices_changed(app); });
     gtk_widget_show_all(app.window);
     gtk_main();
     g_free(resolved);

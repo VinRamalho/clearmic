@@ -117,6 +117,7 @@ elseif(UNIX AND NOT APPLE)
     pkg_check_modules(GSTREAMER REQUIRED IMPORTED_TARGET gstreamer-1.0)
     pkg_check_modules(GIO REQUIRED IMPORTED_TARGET gio-2.0)
     add_library(clearmic_platform audio-engine/platform/linux/src/device_manager.cpp
+        audio-engine/platform/linux/src/device_monitor.cpp
         audio-engine/platform/linux/src/bluez_battery.cpp
         audio-engine/platform/linux/src/upower_battery.cpp
         audio-engine/platform/linux/src/live_capture.cpp
