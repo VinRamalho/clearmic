@@ -63,6 +63,7 @@ PcmAudio read_pcm16_wav(const std::filesystem::path& path) {
     if (file_size < 0 || static_cast<std::uint64_t>(riff_size) + 8U > static_cast<std::uint64_t>(file_size))
         throw std::runtime_error("Invalid WAV: RIFF size exceeds the file length");
     const auto riff_end = static_cast<std::streamoff>(riff_size) + 8;
+    if (riff_end < 12) throw std::runtime_error("Invalid WAV: RIFF container is shorter than its WAVE header");
     input.seekg(12, std::ios::beg);
 
     bool have_format = false;
@@ -87,6 +88,8 @@ PcmAudio read_pcm16_wav(const std::filesystem::path& path) {
         const auto payload_start = static_cast<std::streamoff>(input.tellg());
         if (payload_start < 0 || padded_chunk_size > static_cast<std::uint64_t>(riff_end - payload_start))
             throw std::runtime_error("Invalid WAV: chunk extends beyond the RIFF container");
+        if (padded_chunk_size > static_cast<std::uint64_t>(file_size - payload_start))
+            throw std::runtime_error("Invalid WAV: chunk or padding extends beyond the file length");
         if (std::string(reinterpret_cast<const char*>(header.data()), 4) == "fmt ") {
             if (chunk_size < 16) throw std::runtime_error("Invalid WAV: format chunk is shorter than 16 bytes");
             if (!read_exact(input, reinterpret_cast<char*>(header.data()), 16))

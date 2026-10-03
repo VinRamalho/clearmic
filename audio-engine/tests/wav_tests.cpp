@@ -8,6 +8,7 @@
 #include <fstream>
 #include <iostream>
 #include <cstdlib>
+#include <cstdint>
 #include <stdexcept>
 #include <string>
 
@@ -37,6 +38,48 @@ clearmic::audio::PcmAudio make_audio(const std::uint32_t sample_rate, const std:
     }
     return audio;
 }
+
+void write_u16(std::ofstream& output, const std::uint16_t value) {
+    output.put(static_cast<char>(value & 0xffU));
+    output.put(static_cast<char>((value >> 8U) & 0xffU));
+}
+
+void write_u32(std::ofstream& output, const std::uint32_t value) {
+    for (unsigned int shift = 0; shift < 32; shift += 8)
+        output.put(static_cast<char>((value >> shift) & 0xffU));
+}
+
+void write_chunk_header(std::ofstream& output, const char (&id)[5], const std::uint32_t size) {
+    output.write(id, 4);
+    write_u32(output, size);
+}
+
+void write_pcm_format(std::ofstream& output, const std::uint16_t channels = 1,
+                      const std::uint32_t sample_rate = 48000, const std::uint16_t bits = 16,
+                      const std::uint16_t block_align = 2) {
+    write_chunk_header(output, "fmt ", 16);
+    write_u16(output, 1);
+    write_u16(output, channels);
+    write_u32(output, sample_rate);
+    write_u32(output, sample_rate * block_align);
+    write_u16(output, block_align);
+    write_u16(output, bits);
+}
+
+template <typename Writer>
+void write_riff_fixture(const std::filesystem::path& path, const std::uint32_t riff_size, Writer writer) {
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    output.write("RIFF", 4);
+    write_u32(output, riff_size);
+    output.write("WAVE", 4);
+    writer(output);
+}
+
+bool rejected_wav(const std::filesystem::path& path) {
+    try { static_cast<void>(clearmic::audio::read_pcm16_wav(path)); }
+    catch (const std::exception&) { return true; }
+    return false;
+}
 }
 
 void run_wav_tests() {
@@ -53,6 +96,12 @@ void run_wav_tests() {
     const auto unsupported_path = root / "unsupported-rate.wav";
     const auto unsupported_bits_path = root / "unsupported-bits.wav";
     const auto malformed_path = root / "malformed.wav";
+    const auto truncated_chunk_path = root / "truncated-chunk.wav";
+    const auto missing_padding_path = root / "missing-padding.wav";
+    const auto incomplete_frame_path = root / "incomplete-frame.wav";
+    const auto invalid_alignment_path = root / "invalid-alignment.wav";
+    const auto invalid_sample_rate_path = root / "invalid-sample-rate.wav";
+    const auto invalid_riff_path = root / "invalid-riff-size.wav";
 
     const auto original = make_audio(48000, 1, NoiseSuppressor::frame_samples * 4 + 137);
     write_pcm16_wav(mono_path, original);
@@ -117,6 +166,42 @@ void run_wav_tests() {
     try { static_cast<void>(read_pcm16_wav(malformed_path)); }
     catch (const std::runtime_error&) { rejected_malformed = true; }
     require(rejected_malformed, "Malformed WAV was not rejected");
+
+    write_riff_fixture(truncated_chunk_path, 24, [](std::ofstream& output) {
+        write_chunk_header(output, "fmt ", 16);
+        write_u16(output, 1);
+    });
+    require(rejected_wav(truncated_chunk_path), "Chunk payload extending past the RIFF container was not rejected");
+
+    write_riff_fixture(missing_padding_path, 26, [](std::ofstream& output) {
+        write_pcm_format(output);
+        write_chunk_header(output, "JUNK", 1);
+        output.put('x');
+    });
+    require(rejected_wav(missing_padding_path), "Missing padding after an odd-sized RIFF chunk was not rejected");
+
+    write_riff_fixture(incomplete_frame_path, 40, [](std::ofstream& output) {
+        write_pcm_format(output);
+        write_chunk_header(output, "data", 3);
+        output.write("abc", 3);
+        output.put('\0');
+    });
+    require(rejected_wav(incomplete_frame_path), "PCM data ending mid-frame was not rejected");
+
+    write_riff_fixture(invalid_alignment_path, 36, [](std::ofstream& output) {
+        write_pcm_format(output, 2, 48000, 16, 2);
+        write_chunk_header(output, "data", 0);
+    });
+    require(rejected_wav(invalid_alignment_path), "Inconsistent stereo block alignment was not rejected");
+
+    write_riff_fixture(invalid_sample_rate_path, 36, [](std::ofstream& output) {
+        write_pcm_format(output, 1, 0, 16, 2);
+        write_chunk_header(output, "data", 0);
+    });
+    require(rejected_wav(invalid_sample_rate_path), "Zero WAV sample rate was not rejected");
+
+    write_riff_fixture(invalid_riff_path, 3, [](std::ofstream&) {});
+    require(rejected_wav(invalid_riff_path), "RIFF container shorter than its WAVE header was not rejected");
 
     std::filesystem::remove_all(root);
 }
