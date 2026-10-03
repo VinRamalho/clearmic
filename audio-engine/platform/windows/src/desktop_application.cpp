@@ -381,7 +381,7 @@ void initialize_controls(Application& app) {
     app.battery_status = GetDlgItem(app.window, battery_status_label);
     add_label(app, L"Diagnostics · WASAPI format and latency are available only when measured", 24, 174, 680, 34, device_id_label);
     app.device_id = GetDlgItem(app.window, device_id_label);
-    add_control(app, L"BUTTON", L"Enable ClearMic enhancement", BS_AUTOCHECKBOX, 24, 208, 260, 26, enhancement_check);
+    add_control(app, L"BUTTON", L"Apply enhancement to processed A/B sample", BS_AUTOCHECKBOX, 24, 208, 340, 26, enhancement_check);
     app.enhancement = GetDlgItem(app.window, enhancement_check);
     add_label(app, L"Processing profile", 24, 242, 180);
     add_control(app, L"COMBOBOX", L"", CBS_DROPDOWNLIST, 24, 264, 320, 120, preset_combo);
@@ -427,7 +427,7 @@ void initialize_controls(Application& app) {
     app.stop_playback = GetDlgItem(app.window, stop_playback_button);
     add_label(app, L"", 24, 530, 680, 38, status_label);
     app.status = GetDlgItem(app.window, status_label);
-    add_label(app, L"Windows virtual microphone routing requires an audio endpoint driver, which is not included in this build.", 24, 576, 680, 28,
+    add_label(app, L"Processing is applied to A/B samples only; Windows virtual-microphone routing is unavailable.", 24, 576, 680, 28,
               enhancement_status_label);
     app.enhancement_status = GetDlgItem(app.window, enhancement_status_label);
 

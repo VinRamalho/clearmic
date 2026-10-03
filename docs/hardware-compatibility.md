@@ -17,6 +17,7 @@
 - The CLI's supplemental Bluetooth inventory now lists the WF-C710N hands-free function as connected and `selectable: no`; the separate Realtek AudioEndpoint remains the only selectable microphone in this run.
 - A native Windows `record-test 3` invocation selected the Realtek default endpoint, completed WASAPI capture, and created valid 48 kHz mono WAVs with 144,000 frames each.
 - The captured 3-second sample was all zero (peak 0, RMS 0), so this run proves endpoint opening, buffer flow, and WAV output but does not verify an audible microphone signal or enhancement quality. The microphone may have been muted or no sound was present during the test.
+- A repeat 3-second capture on 2026-10-03 with the current Windows cross-build again completed successfully and wrote both local A/B WAVs (288,044 bytes each, 48 kHz mono PCM16, 144,000 samples). Both original and processed files had peak 0, RMS 0, and no nonzero or clipped samples. This reconfirms the WASAPI capture/file path only; no audible input or processing quality was measured.
 - Repeat `clearmic-cli record-test 5 original.wav processed.wav [device-id]` while speaking into the device, then compare both files. Omit the ID to use the Windows default microphone.
 - A native Windows desktop panel has been added for device selection, saved DSP options, A/B capture, and playback. The Windows CI and MinGW cross-builds verify compilation, but the panel has not yet been exercised on the Windows host with live user interaction.
 
