@@ -18,6 +18,7 @@
 - The Linux backend now maps a PipeWire Bluetooth address to BlueZ's reported battery percentage when available. WSL does not expose a BlueZ system bus or connected Bluetooth microphone, so this telemetry path has not been validated against physical hardware here.
 - Linux additionally checks UPower for an accessory battery object with the exact PipeWire Bluetooth address, allowing real charging-state telemetry where exposed. The current WSL environment has neither an active UPower system service nor a Bluetooth microphone; this UPower path is unit-tested but not physically validated here.
 - On a desktop session with PipeWire, run `clearmic-cli devices` and `clearmic-cli record-test 5 original.wav processed.wav [device-id]` to validate an actual source. The current WSL environment cannot perform this step.
+- On 2026-10-03, a temporary PulseAudio module-null-sink loaded in the WSLg PulseAudio server and exposed a 48 kHz mono monitor source. Playing a generated 440 Hz WAV into the sink produced 48,000 non-silent input frames (RMS 8,484.8), but the monitor recording returned 48,009 silent frames (RMS 0). The temporary module was unloaded. This WSLg result cannot validate a PipeWire virtual-microphone route; non-silent routing still requires a native PipeWire session.
 
 ## Development machine: Windows 11
 
