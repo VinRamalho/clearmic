@@ -167,6 +167,11 @@ if(BUILD_TESTING)
         target_link_libraries(clearmic-core-tests PRIVATE PkgConfig::GIO)
         add_executable(clearmic-pipewire-test-source audio-engine/tests/pipewire_tone_source.cpp)
         target_link_libraries(clearmic-pipewire-test-source PRIVATE PkgConfig::PIPEWIRE)
+        add_executable(clearmic-pipewire-device-monitor-test audio-engine/tests/pipewire_device_monitor_test.cpp
+            audio-engine/platform/linux/src/device_monitor.cpp)
+        target_include_directories(clearmic-pipewire-device-monitor-test PRIVATE
+            audio-engine/core/include audio-engine/platform/linux/include)
+        target_link_libraries(clearmic-pipewire-device-monitor-test PRIVATE PkgConfig::PIPEWIRE)
     endif()
     add_test(NAME clearmic-core-tests COMMAND clearmic-core-tests)
     if(WIN32 OR UNIX AND NOT APPLE)

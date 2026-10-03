@@ -152,6 +152,8 @@ jobs:
           name: clearmic-pipewire-route-test-log
           path: pipewire-route-test.log
           retention-days: 3
+      - name: Verify PipeWire device monitor recovery
+        run: bash -x tests/linux/pipewire_device_monitor_e2e.sh build/clearmic-pipewire-test-source build/clearmic-pipewire-device-monitor-test
       - name: Launch GTK desktop panel
         run: |
           timeout --signal=TERM 20s xvfb-run -a bash -euo pipefail -c '
