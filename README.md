@@ -4,7 +4,7 @@
 
 ClearMic is an open-source, cross-platform desktop application designed to improve microphone voice quality in real time.
 
-> **Development status:** the repository currently contains the C++20 device model, Windows WASAPI and Linux PipeWire input enumeration backends, and a CLI foundation. These backends have not yet been validated by a successful project build. Audio capture, processing, the desktop UI, battery telemetry, virtual microphone, settings, and installers are not implemented yet. This is an early development project, not an installable product.
+> **Development status:** the C++20 device model, Windows WASAPI and Linux PipeWire input enumeration backends, and CLI build successfully on Windows and Ubuntu 24.04 in CI. Local hardware enumeration and audio capture have not yet been validated. Audio processing, the desktop UI, battery telemetry, virtual microphone, settings, and installers are not implemented yet. This is an early development project, not an installable product.
 
 It aims to reduce background noise, echo, room reverberation, and inconsistent microphone levels while preserving a natural-sounding voice.
 
@@ -116,8 +116,8 @@ ClearMic targets:
 
 | Platform | Audio Backend | Status |
 | --- | --- | --- |
-| Ubuntu / Linux | PipeWire | 🚧 Device enumeration foundation; build/runtime validation pending |
-| Windows 11 | WASAPI | 🚧 Device enumeration foundation; build/runtime validation pending |
+| Ubuntu / Linux | PipeWire | 🚧 Device enumeration builds in CI; runtime validation pending |
+| Windows 11 | WASAPI | 🚧 Device enumeration builds in CI; runtime validation pending |
 
 Additional Linux distributions using PipeWire may work in the future.
 
