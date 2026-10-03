@@ -135,6 +135,7 @@ if [[ "$linked" != true ]]; then
 fi
 wait "$consumer_pid" || true
 consumer_pid=""
+cat "$tmp/consumer.log"
 kill -INT "$service_pid" 2>/dev/null || true
 wait "$service_pid" 2>/dev/null || true
 service_pid=""
