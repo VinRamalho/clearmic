@@ -156,7 +156,15 @@ jobs:
             exit 1
           fi
           deb_file="$(realpath "$deb_file")"
-          sudo apt-get install --yes "$deb_file"
+          apt_log="$RUNNER_TEMP/clearmic-apt-install.log"
+          if ! sudo apt-get install --yes "$deb_file" >"$apt_log" 2>&1; then
+            cat "$apt_log"
+            echo "::error file=.github/workflows/build.yml,title=Ubuntu package install failed::apt-get output follows"
+            tail -n 12 "$apt_log" | sed 's/%/%25/g; s/\r/%0D/g' | while IFS= read -r line; do
+              echo "::error file=.github/workflows/build.yml::$line"
+            done
+            exit 100
+          fi
           dpkg-query --show --showformat='${Status}\n' clearmic | grep -Fx 'install ok installed'
           desktop-file-validate /usr/share/applications/clearmic-cli.desktop
           timeout --signal=TERM 10s xvfb-run -a bash -euo pipefail -c '
