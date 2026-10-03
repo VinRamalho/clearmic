@@ -4,6 +4,8 @@
 
 ClearMic is an open-source, cross-platform desktop application designed to improve microphone voice quality in real time.
 
+> **Development status:** the repository currently contains the C++20 device model, Windows WASAPI and Linux PipeWire input enumeration backends, and a CLI foundation. These backends have not yet been validated by a successful project build. Audio capture, processing, the desktop UI, battery telemetry, virtual microphone, settings, and installers are not implemented yet. This is an early development project, not an installable product.
+
 It aims to reduce background noise, echo, room reverberation, and inconsistent microphone levels while preserving a natural-sounding voice.
 
 The long-term goal is simple:
@@ -114,8 +116,8 @@ ClearMic targets:
 
 | Platform | Audio Backend | Status |
 | --- | --- | --- |
-| Ubuntu / Linux | PipeWire | 🚧 In development |
-| Windows 11 | WASAPI | 📋 Planned |
+| Ubuntu / Linux | PipeWire | 🚧 Device enumeration foundation; build/runtime validation pending |
+| Windows 11 | WASAPI | 🚧 Device enumeration foundation; build/runtime validation pending |
 
 Additional Linux distributions using PipeWire may work in the future.
 
@@ -296,6 +298,14 @@ Planned:
 
 The project intentionally avoids committing to Electron unless there is a compelling technical reason to use it.
 
+## 📚 Developer documentation
+
+- [Architecture](docs/architecture.md)
+- [Audio pipeline](docs/audio-pipeline.md)
+- [Battery monitoring](docs/battery-monitoring.md)
+- [Virtual microphone](docs/virtual-microphone.md)
+- [Hardware compatibility](docs/hardware-compatibility.md)
+
 ---
 
 ## 📁 Project Structure
@@ -348,7 +358,7 @@ Target environment:
 The intended development workflow is:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/clearmic.git
+git clone https://github.com/VinRamalho/clearmic.git
 cd clearmic
 
 cmake -S . -B build
@@ -379,7 +389,15 @@ Windows 11 support will use WASAPI.
 
 The goal is to support a similarly simple CMake workflow using Visual Studio / MSVC.
 
-Detailed instructions will be added once the Windows backend is implemented.
+The current Windows work is limited to device discovery; capture, processing, and virtual-microphone support remain unimplemented.
+
+The current Windows device-enumeration target uses CMake and a Visual Studio C++ toolchain. Build from a Visual Studio Developer PowerShell with:
+
+```powershell
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake --build build --config Release
+build\Release\clearmic-cli.exe devices
+```
 
 ---
 

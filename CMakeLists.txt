@@ -1,0 +1,35 @@
+cmake_minimum_required(VERSION 3.20)
+
+project(ClearMic VERSION 0.1.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+add_library(clearmic_core audio-engine/core/src/device.cpp)
+target_include_directories(clearmic_core PUBLIC audio-engine/core/include)
+
+if(WIN32)
+    add_library(clearmic_platform audio-engine/platform/windows/src/device_manager.cpp)
+    target_include_directories(clearmic_platform PUBLIC audio-engine/platform/windows/include)
+    target_link_libraries(clearmic_platform PUBLIC clearmic_core ole32 uuid)
+    target_compile_definitions(clearmic_platform PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+elseif(UNIX AND NOT APPLE)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(PIPEWIRE REQUIRED IMPORTED_TARGET libpipewire-0.3)
+    add_library(clearmic_platform audio-engine/platform/linux/src/device_manager.cpp)
+    target_include_directories(clearmic_platform PUBLIC audio-engine/platform/linux/include)
+    target_link_libraries(clearmic_platform PUBLIC clearmic_core PkgConfig::PIPEWIRE)
+else()
+    message(FATAL_ERROR "ClearMic currently supports Windows and Linux.")
+endif()
+
+add_executable(clearmic-cli audio-engine/core/src/main.cpp)
+target_link_libraries(clearmic-cli PRIVATE clearmic_core clearmic_platform)
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(clearmic-core-tests audio-engine/tests/device_tests.cpp)
+    target_link_libraries(clearmic-core-tests PRIVATE clearmic_core)
+    add_test(NAME clearmic-core-tests COMMAND clearmic-core-tests)
+endif()

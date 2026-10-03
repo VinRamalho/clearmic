@@ -1,0 +1,6 @@
+/build/
+/out/
+/recordings/
+/.vs/
+*.user
+*.suo
