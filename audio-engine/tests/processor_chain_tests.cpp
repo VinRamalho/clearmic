@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <stdexcept>
 #include <vector>
 
@@ -98,9 +99,19 @@ void run_processor_chain_tests() {
     synthetic_settings.gate_threshold_db = -30.0F;
     ProcessorChain gate_processor(1, synthetic_settings);
     (void)process_constant_frame(gate_processor, 500);
-    const auto gated = process_constant_frame(gate_processor, 500);
-    require(std::all_of(gated.begin(), gated.end(), [](const auto value) { return value == 0; }),
-            "Noise gate should mute a steady synthetic signal below its configured threshold");
+    std::array<std::int16_t, NoiseSuppressor::frame_samples> gated{};
+    for (int frame_index = 0; frame_index < 60; ++frame_index)
+        gated = process_constant_frame(gate_processor, 500);
+    require(std::abs(gated.back()) < 5,
+            "Noise gate should smoothly attenuate a steady synthetic signal below its threshold");
+    (void)process_constant_frame(gate_processor, 5000);
+    const auto opened_gate = process_constant_frame(gate_processor, 5000);
+    require(opened_gate.back() > 4000,
+            "Noise gate should reopen smoothly when a signal crosses its hysteresis threshold");
+    for (int frame_index = 0; frame_index < 60; ++frame_index)
+        gated = process_constant_frame(gate_processor, 500);
+    require(std::abs(gated.back()) < 5,
+            "Noise gate should close smoothly after the signal falls below its threshold");
 
     synthetic_settings.noise_gate_enabled = false;
     synthetic_settings.compressor_enabled = true;

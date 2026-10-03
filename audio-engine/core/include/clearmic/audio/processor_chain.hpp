@@ -56,6 +56,8 @@ private:
     std::size_t input_samples_{};
     std::size_t output_offset_{};
     float gain_linear_{1.0F};
+    float gate_gain_{1.0F};
+    bool gate_open_{true};
 };
 
 } // namespace clearmic::audio

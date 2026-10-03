@@ -91,6 +91,19 @@ void ProcessorChain::process_frame() noexcept {
         : 0.0F;
     const auto requested_gain = std::clamp(db_to_linear(current_settings.input_gain_db + automatic_gain_db),
                                            minimum_gain, maximum_gain);
+    constexpr float gate_open_hysteresis = 2.0F; // 6 dB above the close threshold.
+    constexpr float gate_attack_smoothing = 0.004158F; // 5 ms at 48 kHz.
+    constexpr float gate_release_smoothing = 0.000260F; // 80 ms at 48 kHz.
+    float gate_target = 1.0F;
+    if (current_settings.noise_gate_enabled) {
+        const auto close_threshold = db_to_linear(current_settings.gate_threshold_db) * 32768.0F;
+        if (gate_open_ && rms < close_threshold) gate_open_ = false;
+        else if (!gate_open_ && rms >= close_threshold * gate_open_hysteresis) gate_open_ = true;
+        gate_target = gate_open_ ? 1.0F : 0.0F;
+    } else {
+        gate_open_ = true;
+        gate_gain_ = 1.0F;
+    }
     // Smooth gain changes to avoid clicks when a setting or preset changes.
     constexpr float gain_smoothing = 0.02F;
     const auto samples_per_channel = output_frame_.size();
@@ -102,10 +115,10 @@ void ProcessorChain::process_frame() noexcept {
             const auto threshold = db_to_linear(current_settings.compressor_threshold_db) * 32768.0F;
             if (magnitude > threshold) sample = std::copysign(threshold + (magnitude - threshold) * 0.25F, sample);
         }
-        if (current_settings.noise_gate_enabled) {
-            const auto threshold = db_to_linear(current_settings.gate_threshold_db) * 32768.0F;
-            if (magnitude < threshold) sample = 0.0F;
-        }
+        if (current_settings.noise_gate_enabled)
+            gate_gain_ += (gate_target - gate_gain_) *
+                          (gate_target > gate_gain_ ? gate_attack_smoothing : gate_release_smoothing);
+        sample *= gate_gain_;
         output_frame_[index] = clip_sample(sample);
     }
     input_samples_ = 0;
