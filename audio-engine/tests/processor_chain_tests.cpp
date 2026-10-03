@@ -62,6 +62,9 @@ void run_processor_chain_tests() {
     std::array<std::int16_t, frame> next_frame_output{};
     next_frame.fill(6000);
     processor.process(next_frame, next_frame_output);
-    require(std::all_of(next_frame_output.begin(), next_frame_output.end(), [](const auto value) { return value == 5000; }),
+    require(std::all_of(next_frame_output.begin(), next_frame_output.begin() + 160,
+                        [](const auto value) { return value == 4000; }) &&
+            std::all_of(next_frame_output.begin() + 160, next_frame_output.end(),
+                        [](const auto value) { return value == 5000; }),
             "Disabling enhancement should bypass DSP while preserving pipeline latency");
 }
