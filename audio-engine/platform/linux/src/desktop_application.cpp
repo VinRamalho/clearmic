@@ -617,8 +617,10 @@ void on_tray_show(GtkMenuItem*, gpointer data) {
     show_window(*static_cast<Application*>(data));
 }
 
-void on_tray_stop(GtkMenuItem*, gpointer data) {
-    on_stop(nullptr, data);
+void on_tray_toggle_processing(GtkMenuItem*, gpointer data) {
+    auto& app = *static_cast<Application*>(data);
+    if (app.service || app.restart_source) on_stop(nullptr, &app);
+    else on_start(nullptr, &app);
 }
 
 void on_tray_quit(GtkMenuItem*, gpointer data) {
@@ -627,15 +629,18 @@ void on_tray_quit(GtkMenuItem*, gpointer data) {
 }
 
 void on_tray_popup(GtkStatusIcon* icon, guint button, guint activate_time, gpointer data) {
+    auto& app = *static_cast<Application*>(data);
     auto* menu = gtk_menu_new();
     auto* show_item = gtk_menu_item_new_with_label("Open ClearMic");
-    auto* stop_item = gtk_menu_item_new_with_label("Stop enhancement");
+    const bool processing_active = app.service || app.restart_source;
+    auto* toggle_item = gtk_menu_item_new_with_label(processing_active ? "Stop enhancement" : "Start enhancement");
     auto* quit_item = gtk_menu_item_new_with_label("Quit ClearMic");
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), show_item);
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), stop_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), toggle_item);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), quit_item);
     g_signal_connect(show_item, "activate", G_CALLBACK(on_tray_show), data);
-    g_signal_connect(stop_item, "activate", G_CALLBACK(on_tray_stop), data);
+    gtk_widget_set_sensitive(toggle_item, processing_active || (!app.test_capture && selected_index(app) >= 0));
+    g_signal_connect(toggle_item, "activate", G_CALLBACK(on_tray_toggle_processing), data);
     g_signal_connect(quit_item, "activate", G_CALLBACK(on_tray_quit), data);
     g_signal_connect(menu, "selection-done", G_CALLBACK(+[](GtkWidget* menu_widget, gpointer) {
         gtk_widget_destroy(menu_widget);
