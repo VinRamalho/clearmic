@@ -14,7 +14,9 @@ jobs:
       - name: Build
         run: |
           cmake --build build --config Release --verbose *> build.log
-          if ($LASTEXITCODE -ne 0) { Get-Content build.log; exit $LASTEXITCODE }
+          $buildExitCode = $LASTEXITCODE
+          Get-Content build.log
+          if ($buildExitCode -ne 0) { Write-Output "::error::Windows build failed with exit code $buildExitCode"; exit $buildExitCode }
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
       - name: Preserve Windows CLI for local hardware validation
