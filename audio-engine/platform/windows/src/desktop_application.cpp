@@ -12,6 +12,7 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <cwctype>
 #include <cwchar>
 #include <filesystem>
 #include <memory>
@@ -330,6 +331,9 @@ void update_live_diagnostics(Application& app) {
 
 void update_controls(Application& app) {
     const bool has_device = selected_device_index(app) >= 0;
+    const int render_index = selected_render_device_index(app);
+    const bool has_virtual_output = render_index >= 0 &&
+        is_virtual_cable_output(app.render_devices[static_cast<std::size_t>(render_index)]);
     const bool idle = !app.recording && !app.live_routing;
     EnableWindow(app.record, has_device && idle);
     EnableWindow(app.microphone, idle);
@@ -345,7 +349,7 @@ void update_controls(Application& app) {
     EnableWindow(app.play_processed, idle && app.samples_ready);
     SetWindowTextW(app.live_route, app.live_routing ? L"Stop live routing" : L"Start live routing");
     EnableWindow(app.live_route, has_device && (app.live_routing ||
-        (!app.recording && selected_render_device_index(app) >= 0)));
+        (!app.recording && has_virtual_output)));
 }
 
 void refresh_devices(Application& app) {
@@ -386,11 +390,13 @@ void refresh_devices(Application& app) {
                  reinterpret_cast<LPARAM>(L"Choose a virtual-cable playback endpoint"));
     SendMessageW(app.render_output, CB_SETITEMDATA, 0, static_cast<LPARAM>(-1));
     int preferred_render_row = -1;
+    int virtual_output_count = 0;
     for (std::size_t index = 0; index < app.render_devices.size(); ++index) {
         const auto& device = app.render_devices[index];
         const bool virtual_cable = is_virtual_cable_output(device);
+        if (!virtual_cable) continue;
+        ++virtual_output_count;
         std::wstring label = to_wide(device.name);
-        if (!virtual_cable) label += L" (not a virtual cable)";
         if (device.is_default) label += L" (default playback)";
         const LRESULT added = SendMessageW(app.render_output, CB_ADDSTRING, 0,
                                             reinterpret_cast<LPARAM>(label.c_str()));
@@ -401,6 +407,9 @@ void refresh_devices(Application& app) {
     SendMessageW(app.render_output, CB_SETCURSEL,
                  static_cast<WPARAM>(preferred_render_row >= 0 ? preferred_render_row : 0), 0);
     app.refreshing_devices = false;
+    SetWindowTextW(app.enhancement_status, virtual_output_count > 0
+        ? L"Virtual cable detected. Select it to send processed audio to its paired microphone endpoint."
+        : L"No recognized virtual cable playback endpoint. Install a compatible cable to use ClearMic as a microphone.");
     update_device_status(app);
     update_controls(app);
 }
