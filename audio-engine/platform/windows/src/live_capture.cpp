@@ -56,6 +56,8 @@ struct AudioFormat {
 AudioFormat parse_format(const WAVEFORMATEX& format) {
     AudioFormat result{format.nSamplesPerSec, format.nChannels, format.wBitsPerSample, format.nBlockAlign, false};
     if (format.wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
+        if (format.cbSize < sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX))
+            throw std::runtime_error("Windows microphone returned an incomplete extensible audio format");
         const auto& extended = reinterpret_cast<const WAVEFORMATEXTENSIBLE&>(format);
         if (IsEqualGUID(extended.SubFormat, ieee_float_subtype)) result.floating_point = true;
         else if (!IsEqualGUID(extended.SubFormat, pcm_subtype))
@@ -65,7 +67,7 @@ AudioFormat parse_format(const WAVEFORMATEX& format) {
     } else if (format.wFormatTag != WAVE_FORMAT_PCM) {
         throw std::runtime_error("Unsupported Windows microphone encoding");
     }
-    if (result.sample_rate < 8000 || result.sample_rate > 192000 ||
+    if (result.sample_rate < 8000 || result.sample_rate > 192000 || result.block_align == 0 ||
         (result.channels != 1 && result.channels != 2) ||
         (result.floating_point ? result.bits_per_sample != 32 : result.bits_per_sample != 16) ||
         result.block_align != result.channels * (result.bits_per_sample / 8U))
@@ -78,7 +80,7 @@ float read_sample(const BYTE* frame, const AudioFormat& format, const std::uint1
     if (format.floating_point) {
         float value{};
         std::memcpy(&value, sample, sizeof(value));
-        return std::isfinite(value) ? std::clamp(value, -1.0F, 1.0F) : 0.0F;
+        return std::isfinite(value) ? value : 0.0F;
     }
     std::int16_t value{};
     std::memcpy(&value, sample, sizeof(value));
@@ -168,8 +170,11 @@ audio::AudioComparison capture_processed_audio(const std::string& device_id,
             if (++missed_events >= 5) throw std::runtime_error("No microphone audio arrived for five seconds");
             continue;
         }
-        if (wait_result != WAIT_OBJECT_0)
-            throw std::system_error(static_cast<int>(GetLastError()), std::system_category(), "Wait for Windows microphone audio");
+        if (wait_result != WAIT_OBJECT_0) {
+            if (wait_result == WAIT_FAILED)
+                throw std::system_error(static_cast<int>(GetLastError()), std::system_category(), "Wait for Windows microphone audio");
+            throw std::runtime_error("Windows microphone wait returned an unexpected status");
+        }
         missed_events = 0;
         UINT32 packet_frames = 0;
         check_hresult(capture->GetNextPacketSize(&packet_frames), "Read Windows microphone packet size");
@@ -177,8 +182,10 @@ audio::AudioComparison capture_processed_audio(const std::string& device_id,
             BYTE* data = nullptr;
             UINT32 frame_count = 0;
             DWORD flags = 0;
-            check_hresult(capture->GetBuffer(&data, &frame_count, &flags, nullptr, nullptr),
-                          "Read Windows microphone audio packet");
+            const HRESULT packet_result = capture->GetBuffer(&data, &frame_count, &flags, nullptr, nullptr);
+            if (packet_result == AUDCLNT_E_DEVICE_INVALIDATED)
+                throw std::runtime_error("The Windows microphone was disconnected during capture");
+            check_hresult(packet_result, "Read Windows microphone audio packet");
             const auto take = std::min<std::size_t>(frame_count, source_frame_count - captured_frames);
             if ((flags & AUDCLNT_BUFFERFLAGS_SILENT) == 0) {
                 for (std::size_t frame = 0; frame < take; ++frame) {
