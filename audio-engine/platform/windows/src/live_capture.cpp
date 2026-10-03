@@ -176,6 +176,11 @@ audio::AudioComparison capture_processed_audio(const std::string& device_id,
     while (captured_frames < source_frame_count) {
         const auto wait_result = WaitForSingleObject(capture_event, 1000);
         if (wait_result == WAIT_TIMEOUT) {
+            UINT32 ignored_padding = 0;
+            const HRESULT capture_status = client->GetCurrentPadding(&ignored_padding);
+            if (capture_status == AUDCLNT_E_DEVICE_INVALIDATED)
+                throw std::runtime_error("The Windows microphone was disconnected during capture");
+            check_hresult(capture_status, "Check Windows microphone connection");
             if (++missed_events >= 5) throw std::runtime_error("No microphone audio arrived for five seconds");
             continue;
         }
@@ -186,7 +191,10 @@ audio::AudioComparison capture_processed_audio(const std::string& device_id,
         }
         missed_events = 0;
         UINT32 packet_frames = 0;
-        check_hresult(capture->GetNextPacketSize(&packet_frames), "Read Windows microphone packet size");
+        const HRESULT packet_size_result = capture->GetNextPacketSize(&packet_frames);
+        if (packet_size_result == AUDCLNT_E_DEVICE_INVALIDATED)
+            throw std::runtime_error("The Windows microphone was disconnected during capture");
+        check_hresult(packet_size_result, "Read Windows microphone packet size");
         while (packet_frames != 0 && captured_frames < source_frame_count) {
             BYTE* data = nullptr;
             UINT32 frame_count = 0;
@@ -205,8 +213,14 @@ audio::AudioComparison capture_processed_audio(const std::string& device_id,
                 }
             }
             captured_frames += take;
-            check_hresult(capture->ReleaseBuffer(frame_count), "Release Windows microphone packet");
-            check_hresult(capture->GetNextPacketSize(&packet_frames), "Read next Windows microphone packet size");
+            const HRESULT release_result = capture->ReleaseBuffer(frame_count);
+            if (release_result == AUDCLNT_E_DEVICE_INVALIDATED)
+                throw std::runtime_error("The Windows microphone was disconnected during capture");
+            check_hresult(release_result, "Release Windows microphone packet");
+            const HRESULT packet_size_result = capture->GetNextPacketSize(&packet_frames);
+            if (packet_size_result == AUDCLNT_E_DEVICE_INVALIDATED)
+                throw std::runtime_error("The Windows microphone was disconnected during capture");
+            check_hresult(packet_size_result, "Read next Windows microphone packet size");
         }
     }
     check_hresult(client->Stop(), "Stop Windows microphone capture");
