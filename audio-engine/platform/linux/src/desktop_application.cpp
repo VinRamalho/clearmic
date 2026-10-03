@@ -558,6 +558,7 @@ void read_service_output(GObject* source, GAsyncResult* result, gpointer user_da
         } else {
             float max_dsp_ms = 0.0F;
             float max_dsp_budget = 0.0F;
+            float max_dsp_thread_cpu_ms = 0.0F;
             unsigned long long overruns = 0;
             unsigned long long underruns = 0;
             unsigned long long processed_seconds = 0;
@@ -567,23 +568,23 @@ void read_service_output(GObject* source, GAsyncResult* result, gpointer user_da
             float source_graph_ms = 0.0F;
             float source_queue_ms = 0.0F;
             float source_buffered_ms = 0.0F;
-            if (std::sscanf(line, "DIAG %f %f %llu %llu %llu %f %f %f %f %f %f",
-                            &max_dsp_ms, &max_dsp_budget,
+            if (std::sscanf(line, "DIAG %f %f %f %llu %llu %llu %f %f %f %f %f %f",
+                            &max_dsp_ms, &max_dsp_budget, &max_dsp_thread_cpu_ms,
                             &overruns, &underruns, &processed_seconds,
                             &capture_graph_ms, &capture_queue_ms, &capture_buffered_ms,
                             &source_graph_ms, &source_queue_ms, &source_buffered_ms) == 11) {
-                char text[320];
+                char text[512];
                 const bool complete_latency = capture_graph_ms >= 0.0F && capture_queue_ms >= 0.0F && capture_buffered_ms >= 0.0F &&
                     source_graph_ms >= 0.0F && source_queue_ms >= 0.0F && source_buffered_ms >= 0.0F;
                 if (complete_latency) {
                     std::snprintf(text, sizeof(text),
-                        "DSP max %.3f ms (%.1f%% budget) · PipeWire reported delay capture %.2f + %.2f + %.2f; source %.2f + %.2f + %.2f ms · processed %llu s · overruns %llu/%llu",
-                        max_dsp_ms, max_dsp_budget, capture_graph_ms, capture_queue_ms, capture_buffered_ms,
+                        "DSP max %.3f ms (%.1f%% budget; thread CPU peak %.3f ms) · PipeWire reported delay capture %.2f + %.2f + %.2f; source %.2f + %.2f + %.2f ms · processed %llu s · overruns %llu/%llu",
+                        max_dsp_ms, max_dsp_budget, max_dsp_thread_cpu_ms, capture_graph_ms, capture_queue_ms, capture_buffered_ms,
                         source_graph_ms, source_queue_ms, source_buffered_ms, processed_seconds, overruns, underruns);
                 } else {
                     std::snprintf(text, sizeof(text),
-                        "DSP max %.3f ms (%.1f%% budget) · PipeWire route latency unavailable · processed %llu s · overruns %llu/%llu",
-                        max_dsp_ms, max_dsp_budget, processed_seconds, overruns, underruns);
+                        "DSP max %.3f ms (%.1f%% budget; thread CPU peak %.3f ms) · PipeWire route latency unavailable · processed %llu s · overruns %llu/%llu",
+                        max_dsp_ms, max_dsp_budget, max_dsp_thread_cpu_ms, processed_seconds, overruns, underruns);
                 }
                 gtk_label_set_text(GTK_LABEL(app.service_status), text);
             }

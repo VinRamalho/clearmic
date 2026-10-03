@@ -22,6 +22,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <time.h>
 
 namespace clearmic::platform::pipewire {
 namespace {
@@ -49,6 +50,7 @@ struct Session {
     std::atomic<std::uint64_t> processed_samples{};
     std::atomic<float> max_dsp_ms{};
     std::atomic<float> max_dsp_budget_percent{};
+    std::atomic<float> max_dsp_thread_cpu_ms{};
     std::atomic<float> capture_graph_latency_ms{-1.0F};
     std::atomic<float> capture_queue_latency_ms{-1.0F};
     std::atomic<float> capture_resampler_latency_ms{-1.0F};
@@ -115,6 +117,7 @@ void on_diagnostics_timer(void* data, std::uint64_t) {
     const auto underruns = session.source_underruns.load(std::memory_order_relaxed);
     const auto max_dsp_ms = session.max_dsp_ms.load(std::memory_order_relaxed);
     const auto max_dsp_budget = session.max_dsp_budget_percent.load(std::memory_order_relaxed);
+    const auto max_dsp_thread_cpu_ms = session.max_dsp_thread_cpu_ms.load(std::memory_order_relaxed);
     const auto input_level = session.input_rms.load(std::memory_order_relaxed);
     const auto output_level = session.output_rms.load(std::memory_order_relaxed);
     const auto capture_graph_ms = session.capture_graph_latency_ms.load(std::memory_order_relaxed);
@@ -124,7 +127,7 @@ void on_diagnostics_timer(void* data, std::uint64_t) {
     const auto source_queue_ms = session.source_queue_latency_ms.load(std::memory_order_relaxed);
     const auto source_buffered_ms = session.source_resampler_latency_ms.load(std::memory_order_relaxed);
     std::cout << "METER " << input_level << ' ' << output_level << '\n'
-              << "DIAG " << max_dsp_ms << ' ' << max_dsp_budget << ' '
+              << "DIAG " << max_dsp_ms << ' ' << max_dsp_budget << ' ' << max_dsp_thread_cpu_ms << ' '
               << overruns << ' ' << underruns << ' ' << processed / 48000 << ' '
               << capture_graph_ms << ' ' << capture_queue_ms << ' ' << capture_buffered_ms << ' '
               << source_graph_ms << ' ' << source_queue_ms << ' ' << source_buffered_ms << '\n' << std::flush;
@@ -198,7 +201,11 @@ void capture_process(void* data) {
         return;
     }
     const auto process_start = std::chrono::steady_clock::now();
+    timespec thread_cpu_start{};
+    const bool have_thread_cpu_start = clock_gettime(CLOCK_THREAD_CPUTIME_ID, &thread_cpu_start) == 0;
     session.processor.process(std::span<const std::int16_t>(input, count), std::span<std::int16_t>(session.callback_output).first(count));
+    timespec thread_cpu_end{};
+    const bool have_thread_cpu_end = have_thread_cpu_start && clock_gettime(CLOCK_THREAD_CPUTIME_ID, &thread_cpu_end) == 0;
     const auto process_end = std::chrono::steady_clock::now();
     if (count != 0) {
         const auto elapsed_ms = std::chrono::duration<float, std::milli>(process_end - process_start).count();
@@ -210,6 +217,14 @@ void capture_process(void* data) {
         auto max_budget = session.max_dsp_budget_percent.load(std::memory_order_relaxed);
         while (budget_percent > max_budget && !session.max_dsp_budget_percent.compare_exchange_weak(
                    max_budget, budget_percent, std::memory_order_relaxed, std::memory_order_relaxed)) {}
+        if (have_thread_cpu_end) {
+            const auto cpu_elapsed_ms = static_cast<float>(
+                (thread_cpu_end.tv_sec - thread_cpu_start.tv_sec) * 1000.0 +
+                (thread_cpu_end.tv_nsec - thread_cpu_start.tv_nsec) / 1000000.0);
+            auto max_cpu_ms = session.max_dsp_thread_cpu_ms.load(std::memory_order_relaxed);
+            while (cpu_elapsed_ms > max_cpu_ms && !session.max_dsp_thread_cpu_ms.compare_exchange_weak(
+                       max_cpu_ms, cpu_elapsed_ms, std::memory_order_relaxed, std::memory_order_relaxed)) {}
+        }
     }
     double input_square_sum = 0.0;
     double output_square_sum = 0.0;

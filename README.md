@@ -356,9 +356,11 @@ The intended development workflow is:
 git clone https://github.com/VinRamalho/clearmic.git
 cd clearmic
 
-cmake -S . -B build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
+
+Use a Release build for live microphone routing. Debug builds without compiler optimization can miss real-time audio deadlines.
 
 The first CMake configure downloads the pinned RNNoise source and model archives and verifies their SHA-256 hashes. An internet connection is required unless those archives are already cached in the build directory.
 
