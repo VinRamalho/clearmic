@@ -405,10 +405,20 @@ void on_record_sample(GtkButton*, gpointer data) {
     app.original_path = original;
     app.processed_path = processed;
     const auto device_id = app.inputs[static_cast<std::size_t>(index)].id;
+    const int preset_index = std::clamp(gtk_combo_box_get_active(GTK_COMBO_BOX(app.preset)), 0, 2);
+    const char* presets[] = {"natural", "meeting", "strong"};
+    gchar* gain_option = g_strdup_printf("--input-gain-db=%.0f", gtk_range_get_value(GTK_RANGE(app.input_gain)));
     GError* error = nullptr;
     app.test_capture = g_subprocess_new(static_cast<GSubprocessFlags>(G_SUBPROCESS_FLAGS_STDOUT_SILENCE), &error,
                                         app.executable, "record-test", "5", original, processed,
-                                        device_id.c_str(), nullptr);
+                                        device_id.c_str(), presets[preset_index],
+                                        gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(app.enhancement)) ? "--enhancement=on" : "--enhancement=off",
+                                        gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(app.noise_suppression)) ? "--noise-suppression=on" : "--noise-suppression=off",
+                                        gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(app.noise_gate)) ? "--noise-gate=on" : "--noise-gate=off",
+                                        gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(app.automatic_gain)) ? "--automatic-gain=on" : "--automatic-gain=off",
+                                        gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(app.compressor)) ? "--compressor=on" : "--compressor=off",
+                                        gain_option, nullptr);
+    g_free(gain_option);
     g_free(directory);
     g_free(original);
     g_free(processed);

@@ -18,8 +18,9 @@
 namespace clearmic::platform::pipewire {
 namespace {
 struct CaptureState {
+    explicit CaptureState(const audio::ProcessingSettings settings) : processor(1, settings) {}
     pw_main_loop* loop{};
-    audio::ProcessorChain processor{1};
+    audio::ProcessorChain processor;
     audio::PcmAudio original{48000, 1, {}};
     audio::PcmAudio processed{48000, 1, {}};
     std::size_t offset{};
@@ -39,6 +40,7 @@ void on_state_changed(void* data, const pw_stream_state old_state, const pw_stre
 }
 
 struct StreamData {
+    explicit StreamData(const audio::ProcessingSettings settings) : capture(settings) {}
     CaptureState capture;
     pw_stream* stream{};
     spa_hook listener{};
@@ -96,7 +98,8 @@ struct PipeWireRuntime {
 };
 }
 
-audio::AudioComparison capture_processed_audio(const std::string& device_id, const std::uint32_t duration_seconds) {
+audio::AudioComparison capture_processed_audio(const std::string& device_id, const std::uint32_t duration_seconds,
+                                               const audio::ProcessingSettings settings) {
     if (duration_seconds == 0 || duration_seconds > 30)
         throw std::invalid_argument("Capture duration must be between 1 and 30 seconds");
     DeviceManager device_manager;
@@ -114,7 +117,7 @@ audio::AudioComparison capture_processed_audio(const std::string& device_id, con
     runtime.core = pw_context_connect(runtime.context, nullptr, 0);
     if (!runtime.core) throw std::runtime_error("Could not connect to the PipeWire server");
 
-    StreamData state;
+    StreamData state(settings);
     state.capture.loop = runtime.loop;
     const auto sample_count = static_cast<std::size_t>(duration_seconds) * 48000U;
     state.capture.original.samples.resize(sample_count);

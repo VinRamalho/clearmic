@@ -7,6 +7,7 @@
 #include <memory>
 #include <exception>
 #include <cstdint>
+#include <cmath>
 #include <string>
 #include <string_view>
 
@@ -17,13 +18,50 @@
 #endif
 
 namespace {
+bool set_processing_option(const std::string_view argument, clearmic::audio::ProcessingSettings& settings) {
+    auto set_toggle = [&](const std::string_view name, bool& value) {
+        const std::string prefix = std::string(name) + "=";
+        if (!argument.starts_with(prefix)) return false;
+        const auto enabled = argument.substr(prefix.size());
+        if (enabled != "on" && enabled != "off")
+            throw std::invalid_argument("Processing switches must use on or off");
+        value = enabled == "on";
+        return true;
+    };
+    if (set_toggle("--enhancement", settings.enhancement_enabled) ||
+        set_toggle("--noise-suppression", settings.noise_suppression_enabled) ||
+        set_toggle("--noise-gate", settings.noise_gate_enabled) ||
+        set_toggle("--automatic-gain", settings.automatic_gain_enabled) ||
+        set_toggle("--compressor", settings.compressor_enabled)) return true;
+    if (argument.starts_with("--input-gain-db=")) {
+        std::size_t parsed = 0;
+        const auto value = std::stof(std::string(argument.substr(16)), &parsed);
+        if (parsed != argument.size() - 16 || !std::isfinite(value) || value < -12.0F || value > 12.0F)
+            throw std::invalid_argument("Input gain must be between -12 and 12 dB");
+        settings.input_gain_db = value;
+        return true;
+    }
+    if (argument.starts_with("--")) throw std::invalid_argument("Unknown processing option: " + std::string(argument));
+    return false;
+}
+
+bool set_preset(const std::string_view argument, clearmic::audio::Preset& preset,
+                clearmic::audio::ProcessingSettings& settings) {
+    if (argument != "natural" && argument != "meeting" && argument != "strong") return false;
+    preset = argument == "natural" ? clearmic::audio::Preset::natural
+        : argument == "meeting" ? clearmic::audio::Preset::meeting
+        : clearmic::audio::Preset::strong_noise_reduction;
+    settings = clearmic::audio::settings_for_preset(preset);
+    return true;
+}
+
 void print_usage() {
     std::cout << "ClearMic audio tools\n\n"
                  "Usage:\n"
                  "  clearmic-cli devices\n"
                  "  clearmic-cli process <input.wav> <processed.wav>\n"
 #if defined(__linux__) || defined(_WIN32)
-                 "  clearmic-cli record-test <seconds> <original.wav> <processed.wav> [device-id]\n"
+                 "  clearmic-cli record-test <seconds> <original.wav> <processed.wav> [device-id] [preset] [processing options]\n"
 #endif
 #ifdef __linux__
                  "  clearmic-cli serve [device-id] [natural|meeting|strong] [--enhancement=on|off] [--noise-suppression=on|off] [--noise-gate=on|off] [--automatic-gain=on|off] [--compressor=on|off] [--input-gain-db=-12..12]\n"
@@ -47,36 +85,11 @@ int main(const int argc, char** argv) {
                 const std::string_view argument(argv[index]);
                 if (argument == "natural" || argument == "meeting" || argument == "strong") {
                     if (preset_selected) throw std::invalid_argument("Specify one DSP preset");
-                    preset = argument == "natural" ? clearmic::audio::Preset::natural
-                        : (argument == "meeting" ? clearmic::audio::Preset::meeting
-                                                   : clearmic::audio::Preset::strong_noise_reduction);
-                    settings = clearmic::audio::settings_for_preset(preset);
+                    set_preset(argument, preset, settings);
                     preset_selected = true;
                     continue;
                 }
-                auto set_toggle = [&](const std::string_view name, bool& value) {
-                    const std::string prefix = std::string(name) + "=";
-                    if (!argument.starts_with(prefix)) return false;
-                    const auto enabled = argument.substr(prefix.size());
-                    if (enabled != "on" && enabled != "off")
-                        throw std::invalid_argument("Processing switches must use on or off");
-                    value = enabled == "on";
-                    return true;
-                };
-                if (set_toggle("--enhancement", settings.enhancement_enabled) ||
-                    set_toggle("--noise-suppression", settings.noise_suppression_enabled) ||
-                    set_toggle("--noise-gate", settings.noise_gate_enabled) ||
-                    set_toggle("--automatic-gain", settings.automatic_gain_enabled) ||
-                    set_toggle("--compressor", settings.compressor_enabled)) continue;
-                if (argument.starts_with("--input-gain-db=")) {
-                    std::size_t parsed = 0;
-                    const auto value = std::stof(std::string(argument.substr(16)), &parsed);
-                    if (parsed != argument.size() - 16 || value < -12.0F || value > 12.0F)
-                        throw std::invalid_argument("Input gain must be between -12 and 12 dB");
-                    settings.input_gain_db = value;
-                    continue;
-                }
-                if (argument.starts_with("--")) throw std::invalid_argument("Unknown processing option: " + std::string(argument));
+                if (set_processing_option(argument, settings)) continue;
                 if (!device_id.empty()) throw std::invalid_argument("Specify one microphone device ID");
                 device_id = argument;
             }
@@ -89,14 +102,28 @@ int main(const int argc, char** argv) {
     }
 #endif
 #if defined(__linux__) || defined(_WIN32)
-    if ((argc == 5 || argc == 6) && std::string_view(argv[1]) == "record-test") {
+    if (argc >= 5 && argc <= 14 && std::string_view(argv[1]) == "record-test") {
         try {
             const auto seconds = static_cast<std::uint32_t>(std::stoul(argv[2]));
-            const std::string device_id = argc == 6 ? argv[5] : "";
+            std::string device_id;
+            auto preset = clearmic::audio::Preset::natural;
+            auto settings = clearmic::audio::settings_for_preset(preset);
+            bool preset_selected = false;
+            for (int index = 5; index < argc; ++index) {
+                const std::string_view argument(argv[index]);
+                if (argument == "natural" || argument == "meeting" || argument == "strong") {
+                    if (preset_selected) throw std::invalid_argument("Specify one DSP preset");
+                    set_preset(argument, preset, settings);
+                    preset_selected = true;
+                } else if (!set_processing_option(argument, settings)) {
+                    if (!device_id.empty()) throw std::invalid_argument("Specify one microphone device ID");
+                    device_id = argument;
+                }
+            }
 #ifdef _WIN32
-            auto comparison = clearmic::platform::windows::capture_processed_audio(device_id, seconds);
+            auto comparison = clearmic::platform::windows::capture_processed_audio(device_id, seconds, settings);
 #else
-            auto comparison = clearmic::platform::pipewire::capture_processed_audio(device_id, seconds);
+            auto comparison = clearmic::platform::pipewire::capture_processed_audio(device_id, seconds, settings);
 #endif
             clearmic::audio::write_pcm16_wav(argv[3], comparison.original);
             clearmic::audio::write_pcm16_wav(argv[4], comparison.processed);
