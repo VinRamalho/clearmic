@@ -43,5 +43,7 @@ public:
 };
 
 [[nodiscard]] bool is_valid_battery_percentage(unsigned int percentage) noexcept;
+[[nodiscard]] std::optional<unsigned int> battery_percentage_from_capacity(
+    std::uint32_t current_capacity, std::uint32_t full_capacity) noexcept;
 
 } // namespace clearmic::audio

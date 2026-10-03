@@ -5,6 +5,8 @@
 #include <cfgmgr32.h>
 #include <endpointvolume.h>
 #include <mmdeviceapi.h>
+#include <winioctl.h>
+#include <poclass.h>
 #include <propvarutil.h>
 #include <setupapi.h>
 
@@ -36,6 +38,12 @@ namespace clearmic::platform::windows {
 namespace {
 constexpr IID audio_meter_information_iid{
     0xc02216f6, 0x8c67, 0x4b5b, {0x9d, 0x00, 0xd0, 0x08, 0xe7, 0x3e, 0x00, 0x64}};
+constexpr GUID battery_device_interface_guid{
+    0x72631e54, 0x78a4, 0x11d0, {0xbc, 0xf7, 0x00, 0xaa, 0x00, 0xb7, 0xb3, 0x2a}};
+constexpr DEVPROPKEY device_container_id_key{
+    {0x8c7ed206, 0x3f8a, 0x4827, {0xb3, 0xab, 0xae, 0x9e, 0x1f, 0xae, 0xfc, 0x6c}}, 2};
+constexpr GUID no_container_id{
+    0x00000000, 0x0000, 0x0000, {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}};
 constexpr PROPERTYKEY device_friendly_name_key{
     {0xa45c254e, 0xdf1c, 0x4efd, {0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0}}, 14};
 template <typename T> struct ComRelease { void operator()(T* value) const noexcept { if (value) value->Release(); } };
@@ -119,6 +127,114 @@ std::vector<audio::AudioDevice> bluetooth_audio_functions() {
     }
     return result;
 }
+
+std::vector<GUID> endpoint_container_ids(const std::wstring& endpoint_id) {
+    if (endpoint_id.empty()) return {};
+    std::wstring instance_id = L"SWD\\MMDEVAPI\\";
+    instance_id += endpoint_id;
+    DEVINST node{};
+    if (CM_Locate_DevNodeW(&node, instance_id.data(), CM_LOCATE_DEVNODE_NORMAL) != CR_SUCCESS)
+        return {};
+
+    // MMDevice endpoints and their physical devices may have different
+    // ContainerIds. Keep every real ID in the ancestry for strict matching.
+    std::vector<GUID> containers;
+    for (unsigned int depth = 0; depth < 16; ++depth) {
+        GUID container{};
+        DEVPROPTYPE property_type{};
+        ULONG size = sizeof(container);
+        if (CM_Get_DevNode_PropertyW(node, &device_container_id_key, &property_type,
+                                     reinterpret_cast<PBYTE>(&container), &size, 0) == CR_SUCCESS &&
+            property_type == DEVPROP_TYPE_GUID && !IsEqualGUID(container, no_container_id) &&
+            std::none_of(containers.begin(), containers.end(), [&](const GUID& existing) {
+                return IsEqualGUID(existing, container) != FALSE;
+            })) containers.push_back(container);
+        DEVINST parent{};
+        if (CM_Get_Parent(&parent, node, 0) != CR_SUCCESS) break;
+        node = parent;
+    }
+    return containers;
+}
+
+std::optional<audio::BatteryInfo> query_battery_interface(const wchar_t* path) {
+    HANDLE battery = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                 nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (battery == INVALID_HANDLE_VALUE) return std::nullopt;
+    struct HandleGuard { HANDLE value; ~HandleGuard() { CloseHandle(value); } } guard{battery};
+
+    ULONG timeout_ms = 0;
+    ULONG tag = 0;
+    DWORD bytes_returned = 0;
+    if (!DeviceIoControl(battery, IOCTL_BATTERY_QUERY_TAG, &timeout_ms, sizeof(timeout_ms),
+                         &tag, sizeof(tag), &bytes_returned, nullptr) || tag == 0)
+        return std::nullopt;
+
+    BATTERY_QUERY_INFORMATION information_query{tag, BatteryInformation, 0};
+    BATTERY_INFORMATION information{};
+    if (!DeviceIoControl(battery, IOCTL_BATTERY_QUERY_INFORMATION, &information_query,
+                         sizeof(information_query), &information, sizeof(information),
+                         &bytes_returned, nullptr)) return std::nullopt;
+    if ((information.Capabilities & BATTERY_SYSTEM_BATTERY) != 0) return std::nullopt;
+
+    BATTERY_WAIT_STATUS status_query{tag, 0, 0, 0, 0};
+    BATTERY_STATUS status{};
+    if (!DeviceIoControl(battery, IOCTL_BATTERY_QUERY_STATUS, &status_query, sizeof(status_query),
+                         &status, sizeof(status), &bytes_returned, nullptr)) return std::nullopt;
+    const auto percentage = audio::battery_percentage_from_capacity(status.Capacity,
+                                                                      information.FullChargedCapacity);
+    if (!percentage) return std::nullopt;
+
+    auto charging = audio::ChargingState::unknown;
+    if ((status.PowerState & BATTERY_DISCHARGING) != 0)
+        charging = audio::ChargingState::not_charging;
+    else if (*percentage == 100)
+        charging = audio::ChargingState::full;
+    else if ((status.PowerState & BATTERY_CHARGING) != 0)
+        charging = audio::ChargingState::charging;
+    return audio::BatteryInfo{*percentage, charging};
+}
+
+std::optional<audio::BatteryInfo> endpoint_battery(const std::wstring& endpoint_id) {
+    const auto containers = endpoint_container_ids(endpoint_id);
+    if (containers.empty()) return std::nullopt;
+
+    HDEVINFO batteries = SetupDiGetClassDevsW(&battery_device_interface_guid, nullptr, nullptr,
+                                              DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
+    if (batteries == INVALID_HANDLE_VALUE) return std::nullopt;
+    struct DeviceSetGuard { HDEVINFO value; ~DeviceSetGuard() { SetupDiDestroyDeviceInfoList(value); } } guard{batteries};
+
+    for (DWORD index = 0;; ++index) {
+        SP_DEVICE_INTERFACE_DATA interface_data{};
+        interface_data.cbSize = sizeof(interface_data);
+        if (!SetupDiEnumDeviceInterfaces(batteries, nullptr, &battery_device_interface_guid,
+                                         index, &interface_data)) {
+            if (GetLastError() == ERROR_NO_MORE_ITEMS) break;
+            continue;
+        }
+        DWORD required_size = 0;
+        SetupDiGetDeviceInterfaceDetailW(batteries, &interface_data, nullptr, 0, &required_size, nullptr);
+        if (required_size < sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_W)) continue;
+        std::vector<BYTE> detail_storage(required_size);
+        auto* detail = reinterpret_cast<SP_DEVICE_INTERFACE_DETAIL_DATA_W*>(detail_storage.data());
+        detail->cbSize = sizeof(*detail);
+        SP_DEVINFO_DATA device_data{};
+        device_data.cbSize = sizeof(device_data);
+        if (!SetupDiGetDeviceInterfaceDetailW(batteries, &interface_data, detail, required_size,
+                                              nullptr, &device_data)) continue;
+
+        GUID battery_container{};
+        DEVPROPTYPE property_type{};
+        ULONG property_size = sizeof(battery_container);
+        if (CM_Get_DevNode_PropertyW(device_data.DevInst, &device_container_id_key, &property_type,
+                                     reinterpret_cast<PBYTE>(&battery_container), &property_size, 0) != CR_SUCCESS ||
+            property_type != DEVPROP_TYPE_GUID ||
+            std::none_of(containers.begin(), containers.end(), [&](const GUID& container) {
+                return IsEqualGUID(battery_container, container) != FALSE;
+            })) continue;
+        if (auto reading = query_battery_interface(detail->DevicePath)) return reading;
+    }
+    return std::nullopt;
+}
 }
 
 std::vector<audio::AudioDevice> DeviceManager::input_devices() {
@@ -158,6 +274,7 @@ std::vector<audio::AudioDevice> DeviceManager::input_devices() {
         audio::AudioDevice info;
         info.id = to_utf8(id);
         info.is_default = id_value == default_id_value;
+        try { info.capabilities.battery = endpoint_battery(id_value); } catch (...) {}
         CoTaskMemFree(id);
 
         DWORD state = 0;

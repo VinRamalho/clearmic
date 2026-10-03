@@ -12,6 +12,13 @@ void run_processor_chain_tests();
 int main() {
     using namespace clearmic::audio;
     if (!is_valid_battery_percentage(0) || !is_valid_battery_percentage(100) || is_valid_battery_percentage(101)) return 1;
+    if (battery_percentage_from_capacity(0, 100) != 0 ||
+        battery_percentage_from_capacity(1, 3) != 33 ||
+        battery_percentage_from_capacity(100, 100) != 100 ||
+        battery_percentage_from_capacity(120, 100) != 100 ||
+        battery_percentage_from_capacity(10, 0) ||
+        battery_percentage_from_capacity(0xffffffffU, 100) ||
+        battery_percentage_from_capacity(10, 0xffffffffU)) return 15;
     AudioDevice device;
     if (device.device_kind != "microphone" || !device.selectable) return 8;
     AudioDevice headset_function;
