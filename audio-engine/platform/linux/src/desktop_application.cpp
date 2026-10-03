@@ -33,6 +33,9 @@ struct Application {
     GtkWidget* noise_gate{};
     GtkWidget* automatic_gain{};
     GtkWidget* compressor{};
+    GtkWidget* enhancement{};
+    GtkWidget* input_gain{};
+    GtkWidget* input_gain_label{};
     std::vector<audio::AudioDevice> inputs;
     GSubprocess* service{};
     GSubprocess* test_capture{};
@@ -161,6 +164,32 @@ bool stored_processing_toggle(const char* key, const bool fallback) {
     return result;
 }
 
+float stored_input_gain() {
+    GKeyFile* key_file = g_key_file_new();
+    const auto path = settings_path();
+    g_key_file_load_from_file(key_file, path.c_str(), G_KEY_FILE_NONE, nullptr);
+    GError* error = nullptr;
+    const double value = g_key_file_get_double(key_file, "processing", "input-gain-db", &error);
+    const float result = error ? 0.0F : static_cast<float>(std::clamp(value, -12.0, 12.0));
+    if (error) g_error_free(error);
+    g_key_file_unref(key_file);
+    return result;
+}
+
+void save_input_gain(const float value) {
+    GKeyFile* key_file = g_key_file_new();
+    const auto path = settings_path();
+    g_key_file_load_from_file(key_file, path.c_str(), G_KEY_FILE_NONE, nullptr);
+    g_key_file_set_double(key_file, "processing", "input-gain-db", std::clamp(value, -12.0F, 12.0F));
+    gsize length = 0;
+    gchar* data = g_key_file_to_data(key_file, &length, nullptr);
+    if (data) {
+        g_file_set_contents(path.c_str(), data, static_cast<gssize>(length), nullptr);
+        g_free(data);
+    }
+    g_key_file_unref(key_file);
+}
+
 void save_processing_toggle(const char* key, const bool value) {
     GKeyFile* key_file = g_key_file_new();
     const auto path = settings_path();
@@ -209,6 +238,8 @@ void update_controls(Application& app) {
     gtk_widget_set_sensitive(app.noise_gate, !service_active && app.test_capture == nullptr);
     gtk_widget_set_sensitive(app.automatic_gain, !service_active && app.test_capture == nullptr);
     gtk_widget_set_sensitive(app.compressor, !service_active && app.test_capture == nullptr);
+    gtk_widget_set_sensitive(app.enhancement, !service_active && app.test_capture == nullptr);
+    gtk_widget_set_sensitive(app.input_gain, !service_active && app.test_capture == nullptr);
     gtk_widget_set_sensitive(app.record_button, !service_active && app.test_capture == nullptr && selected_index(app) >= 0);
     gtk_widget_set_sensitive(app.play_original_button, app.player && app.test_capture == nullptr && !app.original_path.empty());
     gtk_widget_set_sensitive(app.play_processed_button, app.player && app.test_capture == nullptr && !app.processed_path.empty());
@@ -275,11 +306,13 @@ void on_preset_changed(GtkComboBox* combo, gpointer data) {
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(app.noise_gate), settings.noise_gate_enabled);
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(app.automatic_gain), settings.automatic_gain_enabled);
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(app.compressor), settings.compressor_enabled);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(app.enhancement), settings.enhancement_enabled);
     app.updating_preferences = false;
     save_processing_toggle("noise-suppression", settings.noise_suppression_enabled);
     save_processing_toggle("noise-gate", settings.noise_gate_enabled);
     save_processing_toggle("automatic-gain", settings.automatic_gain_enabled);
     save_processing_toggle("compressor", settings.compressor_enabled);
+    save_processing_toggle("enhancement-enabled", settings.enhancement_enabled);
 }
 
 void on_processing_toggle(GtkToggleButton* button, gpointer user_data) {
@@ -287,6 +320,15 @@ void on_processing_toggle(GtkToggleButton* button, gpointer user_data) {
     if (app.updating_preferences) return;
     const auto* key = static_cast<const char*>(g_object_get_data(G_OBJECT(button), "clearmic-setting-key"));
     if (key) save_processing_toggle(key, gtk_toggle_button_get_active(button) != FALSE);
+}
+
+void on_input_gain_changed(GtkRange* range, gpointer user_data) {
+    auto& app = *static_cast<Application*>(user_data);
+    const float value = static_cast<float>(gtk_range_get_value(range));
+    gchar* text = g_strdup_printf("Input gain: %+.0f dB", static_cast<double>(value));
+    gtk_label_set_text(GTK_LABEL(app.input_gain_label), text);
+    g_free(text);
+    if (!app.updating_preferences) save_input_gain(value);
 }
 
 void on_refresh(GtkButton*, gpointer data) { refresh_devices(*static_cast<Application*>(data)); }
@@ -382,6 +424,13 @@ void on_record_sample(GtkButton*, gpointer data) {
     }
     gtk_label_set_text(GTK_LABEL(app.service_status), "Recording five seconds for local A/B comparison…");
     gtk_widget_set_sensitive(app.devices, FALSE);
+    gtk_widget_set_sensitive(app.preset, FALSE);
+    gtk_widget_set_sensitive(app.noise_suppression, FALSE);
+    gtk_widget_set_sensitive(app.noise_gate, FALSE);
+    gtk_widget_set_sensitive(app.automatic_gain, FALSE);
+    gtk_widget_set_sensitive(app.compressor, FALSE);
+    gtk_widget_set_sensitive(app.enhancement, FALSE);
+    gtk_widget_set_sensitive(app.input_gain, FALSE);
     gtk_widget_set_sensitive(app.refresh_button, FALSE);
     update_controls(app);
     g_subprocess_wait_check_async(app.test_capture, nullptr,
@@ -435,14 +484,18 @@ void launch_service(Application& app) {
     const int preset_index = std::clamp(gtk_combo_box_get_active(GTK_COMBO_BOX(app.preset)), 0, 2);
     const char* presets[] = {"natural", "meeting", "strong"};
     GError* error = nullptr;
+    gchar* gain_option = g_strdup_printf("--input-gain-db=%.0f", gtk_range_get_value(GTK_RANGE(app.input_gain)));
     const gchar* arguments[] = {
         app.executable, "serve", app.active_device_id.c_str(), presets[preset_index],
+        gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(app.enhancement)) ? "--enhancement=on" : "--enhancement=off",
         gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(app.noise_suppression)) ? "--noise-suppression=on" : "--noise-suppression=off",
         gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(app.noise_gate)) ? "--noise-gate=on" : "--noise-gate=off",
         gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(app.automatic_gain)) ? "--automatic-gain=on" : "--automatic-gain=off",
         gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(app.compressor)) ? "--compressor=on" : "--compressor=off",
+        gain_option,
         nullptr};
     app.service = g_subprocess_newv(arguments, static_cast<GSubprocessFlags>(G_SUBPROCESS_FLAGS_STDOUT_PIPE), &error);
+    g_free(gain_option);
     if (!app.service) {
         gtk_label_set_text(GTK_LABEL(app.service_status), error ? error->message : "Could not start audio service.");
         if (error) g_error_free(error);
@@ -653,10 +706,21 @@ int run_desktop_application(const char* executable_path) {
     app.noise_gate = make_processing_toggle("Noise gate", "noise-gate");
     app.automatic_gain = make_processing_toggle("Automatic gain", "automatic-gain");
     app.compressor = make_processing_toggle("Compressor", "compressor");
+    app.enhancement = gtk_check_button_new_with_label("Enable ClearMic enhancement");
+    app.input_gain_label = make_label("Input gain: +0 dB");
+    app.input_gain = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, -12.0, 12.0, 1.0);
+    gtk_scale_set_digits(GTK_SCALE(app.input_gain), 0);
+    gtk_scale_set_value_pos(GTK_SCALE(app.input_gain), GTK_POS_RIGHT);
+    gtk_widget_set_hexpand(app.input_gain, TRUE);
+    auto* gain_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_box_pack_start(GTK_BOX(gain_box), app.input_gain_label, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(gain_box), app.input_gain, TRUE, TRUE, 0);
     gtk_grid_attach(GTK_GRID(processing_controls), app.noise_suppression, 0, 0, 1, 1);
     gtk_grid_attach(GTK_GRID(processing_controls), app.noise_gate, 1, 0, 1, 1);
     gtk_grid_attach(GTK_GRID(processing_controls), app.automatic_gain, 0, 1, 1, 1);
     gtk_grid_attach(GTK_GRID(processing_controls), app.compressor, 1, 1, 1, 1);
+    gtk_grid_attach(GTK_GRID(processing_controls), app.enhancement, 0, 2, 2, 1);
+    gtk_grid_attach(GTK_GRID(processing_controls), gain_box, 0, 3, 2, 1);
     gtk_box_pack_start(GTK_BOX(layout), processing_controls, FALSE, FALSE, 0);
     app.device_status = make_label("Discovering PipeWire microphones…");
     gtk_label_set_line_wrap(GTK_LABEL(app.device_status), TRUE);
@@ -720,6 +784,9 @@ int run_desktop_application(const char* executable_path) {
     g_signal_connect(app.noise_gate, "toggled", G_CALLBACK(on_processing_toggle), &app);
     g_signal_connect(app.automatic_gain, "toggled", G_CALLBACK(on_processing_toggle), &app);
     g_signal_connect(app.compressor, "toggled", G_CALLBACK(on_processing_toggle), &app);
+    g_object_set_data(G_OBJECT(app.enhancement), "clearmic-setting-key", const_cast<char*>("enhancement-enabled"));
+    g_signal_connect(app.enhancement, "toggled", G_CALLBACK(on_processing_toggle), &app);
+    g_signal_connect(app.input_gain, "value-changed", G_CALLBACK(on_input_gain_changed), &app);
     if (app.player) {
         GstBus* bus = gst_element_get_bus(app.player);
         app.player_bus_watch = gst_bus_add_watch(bus, on_player_message, &app);
@@ -748,6 +815,9 @@ int run_desktop_application(const char* executable_path) {
         stored_processing_toggle("automatic-gain", preset_settings.automatic_gain_enabled));
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(app.compressor),
         stored_processing_toggle("compressor", preset_settings.compressor_enabled));
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(app.enhancement),
+        stored_processing_toggle("enhancement-enabled", preset_settings.enhancement_enabled));
+    gtk_range_set_value(GTK_RANGE(app.input_gain), stored_input_gain());
     app.updating_preferences = false;
     refresh_devices(app);
     app.device_refresh_source = g_timeout_add_seconds(3, on_device_refresh_timer, &app);

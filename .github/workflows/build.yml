@@ -42,7 +42,13 @@ jobs:
           if (-not $installer) { throw "CPack did not produce a Windows MSI" }
           & msiexec.exe /i $installer.FullName /qn /norestart
           if ($LASTEXITCODE -ne 0) { throw "MSI installation failed with exit code $LASTEXITCODE" }
-          $installedFiles = Get-ChildItem -LiteralPath (Join-Path $env:ProgramFiles "ClearMic") -File -Recurse
+          $registryPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+          $product = Get-ChildItem $registryPath | Get-ItemProperty | Where-Object DisplayName -Like "*ClearMic*" | Select-Object -First 1
+          if (-not $product) { throw "Windows Installer did not register ClearMic" }
+          $installRoot = $product.InstallLocation
+          if (-not $installRoot) { $installRoot = Join-Path $env:ProgramFiles "ClearMic" }
+          Write-Output "ClearMic install location: $installRoot"
+          $installedFiles = Get-ChildItem -LiteralPath $installRoot -File -Recurse
           if (-not ($installedFiles.Name -contains "clearmic-desktop.exe")) { throw "Installed desktop application was not found" }
           if (-not ($installedFiles.Name -contains "clearmic-cli.exe")) { throw "Installed CLI was not found" }
           $desktopExecutable = $installedFiles | Where-Object Name -eq "clearmic-desktop.exe" | Select-Object -First 1
@@ -57,7 +63,7 @@ jobs:
           }
           & msiexec.exe /x $installer.FullName /qn /norestart
           if ($LASTEXITCODE -ne 0) { throw "MSI removal failed with exit code $LASTEXITCODE" }
-          $remainingFiles = Get-ChildItem -LiteralPath (Join-Path $env:ProgramFiles "ClearMic") -File -Recurse -ErrorAction SilentlyContinue
+          $remainingFiles = Get-ChildItem -LiteralPath $installRoot -File -Recurse -ErrorAction SilentlyContinue
           if ($remainingFiles.Name -contains "clearmic-desktop.exe") { throw "MSI removal left the desktop application installed" }
       - name: Preserve Windows installer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

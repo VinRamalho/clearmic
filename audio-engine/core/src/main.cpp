@@ -26,7 +26,7 @@ void print_usage() {
                  "  clearmic-cli record-test <seconds> <original.wav> <processed.wav> [device-id]\n"
 #endif
 #ifdef __linux__
-                 "  clearmic-cli serve [device-id] [natural|meeting|strong] [--noise-suppression=on|off] [--noise-gate=on|off] [--automatic-gain=on|off] [--compressor=on|off]\n"
+                 "  clearmic-cli serve [device-id] [natural|meeting|strong] [--enhancement=on|off] [--noise-suppression=on|off] [--noise-gate=on|off] [--automatic-gain=on|off] [--compressor=on|off] [--input-gain-db=-12..12]\n"
                  "  clearmic-cli gui\n"
 #endif
                  ;
@@ -37,7 +37,7 @@ int main(const int argc, char** argv) {
 #ifdef __linux__
     if (argc == 2 && std::string_view(argv[1]) == "gui")
         return clearmic::platform::pipewire::run_desktop_application(argv[0]);
-    if (argc >= 2 && argc <= 8 && std::string_view(argv[1]) == "serve") {
+    if (argc >= 2 && argc <= 10 && std::string_view(argv[1]) == "serve") {
         try {
             std::string device_id;
             clearmic::audio::Preset preset = clearmic::audio::Preset::natural;
@@ -63,10 +63,19 @@ int main(const int argc, char** argv) {
                     value = enabled == "on";
                     return true;
                 };
-                if (set_toggle("--noise-suppression", settings.noise_suppression_enabled) ||
+                if (set_toggle("--enhancement", settings.enhancement_enabled) ||
+                    set_toggle("--noise-suppression", settings.noise_suppression_enabled) ||
                     set_toggle("--noise-gate", settings.noise_gate_enabled) ||
                     set_toggle("--automatic-gain", settings.automatic_gain_enabled) ||
                     set_toggle("--compressor", settings.compressor_enabled)) continue;
+                if (argument.starts_with("--input-gain-db=")) {
+                    std::size_t parsed = 0;
+                    const auto value = std::stof(std::string(argument.substr(16)), &parsed);
+                    if (parsed != argument.size() - 16 || value < -12.0F || value > 12.0F)
+                        throw std::invalid_argument("Input gain must be between -12 and 12 dB");
+                    settings.input_gain_db = value;
+                    continue;
+                }
                 if (argument.starts_with("--")) throw std::invalid_argument("Unknown processing option: " + std::string(argument));
                 if (!device_id.empty()) throw std::invalid_argument("Specify one microphone device ID");
                 device_id = argument;
