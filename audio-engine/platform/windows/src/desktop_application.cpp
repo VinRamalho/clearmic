@@ -5,6 +5,7 @@
 
 #include <windows.h>
 #include <commctrl.h>
+#include <dbt.h>
 #include <shellapi.h>
 #include <shlobj.h>
 #include <mmsystem.h>
@@ -52,6 +53,7 @@ constexpr int virtual_cable_help_button = 122;
 constexpr UINT live_route_complete_message = WM_APP + 2;
 constexpr UINT live_route_started_message = WM_APP + 3;
 constexpr UINT tray_callback_message = WM_APP + 4;
+constexpr UINT device_refresh_timer = 3;
 constexpr int tray_open_command = 201;
 constexpr int tray_route_command = 202;
 constexpr int tray_quit_command = 203;
@@ -780,8 +782,19 @@ LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPAR
             SendMessageW(app->output_level, PBM_SETPOS,
                          static_cast<WPARAM>(std::clamp(output * 100.0F, 0.0F, 100.0F)), 0);
             update_live_diagnostics(*app);
+        } else if (wparam == device_refresh_timer) {
+            KillTimer(window, device_refresh_timer);
+            refresh_devices(*app);
         }
         return 0;
+    case WM_DEVICECHANGE:
+        if (wparam == DBT_DEVNODES_CHANGED || wparam == DBT_DEVICEARRIVAL ||
+            wparam == DBT_DEVICEREMOVECOMPLETE) {
+            // Device and endpoint changes can arrive in bursts; refresh once after they settle.
+            SetTimer(window, device_refresh_timer, 300, nullptr);
+            return TRUE;
+        }
+        return DefWindowProcW(window, message, wparam, lparam);
     case WM_HSCROLL:
         if (reinterpret_cast<HWND>(lparam) == app->input_gain) {
             SetWindowTextW(app->gain_value,
@@ -898,6 +911,7 @@ LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPAR
         PlaySoundW(nullptr, nullptr, 0);
         KillTimer(window, 1);
         KillTimer(window, 2);
+        KillTimer(window, device_refresh_timer);
         remove_tray_icon(*app);
         DestroyWindow(window);
         return 0;
