@@ -15,11 +15,12 @@ inline std::wstring normalize_endpoint_name(std::wstring name) {
 }
 
 inline std::wstring_view paired_capture_name(std::wstring_view output_name) {
-    if (output_name.find(L"cable input") != std::wstring_view::npos) return L"cable output";
-    if (output_name.find(L"voicemeeter input") != std::wstring_view::npos) return L"voicemeeter output";
-    if (output_name.find(L"virtual cable input") != std::wstring_view::npos) return L"virtual cable output";
-    if (output_name.find(L"virtual audio input") != std::wstring_view::npos) return L"virtual audio output";
-    if (output_name.find(L"virtual audio driver") != std::wstring_view::npos) return L"virtual mic driver";
+    const auto name = normalize_endpoint_name(std::wstring(output_name));
+    if (name.find(L"cable input") != std::wstring::npos) return L"cable output";
+    if (name.find(L"voicemeeter input") != std::wstring::npos) return L"voicemeeter output";
+    if (name.find(L"virtual cable input") != std::wstring::npos) return L"virtual cable output";
+    if (name.find(L"virtual audio input") != std::wstring::npos) return L"virtual audio output";
+    if (name.find(L"virtual audio driver") != std::wstring::npos) return L"virtual mic driver";
     return {};
 }
 
