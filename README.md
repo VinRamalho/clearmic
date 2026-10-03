@@ -169,7 +169,7 @@ Platform-specific implementations are isolated behind common interfaces.
 
 ## 🧠 Audio Processing
 
-ClearMic is being designed around proven audio-processing techniques rather than proprietary cloud processing.
+ClearMic uses local, established audio-processing techniques rather than cloud processing.
 
 The current processor uses RNNoise for noise suppression. The stateful chain also provides input gain, a noise gate, compression, and RMS-based automatic gain control.
 
@@ -299,35 +299,27 @@ Linux uses a GTK 3 desktop panel and Windows uses a native Win32 panel. Windows 
 
 ## 📁 Project Structure
 
-The project is expected to evolve roughly around this structure:
+The current source is organized around shared audio processing and platform-specific desktop integrations:
 
 ```text
-clearmic/
+clear-mic/
 ├── audio-engine/
 │   ├── core/
-│   ├── processing/
 │   ├── platform/
 │   │   ├── linux/
 │   │   └── windows/
 │   └── tests/
-│
-├── desktop/
-│   ├── ui/
-│   └── native/
-│
 ├── docs/
-│   ├── architecture.md
-│   ├── audio-pipeline.md
-│   └── virtual-microphone.md
-│
-├── scripts/
-│
+├── packaging/
+│   └── linux/
+├── tests/
+│   └── linux/
+├── .github/workflows/
 ├── CMakeLists.txt
-├── README.md
+├── LICENSE
+├── THIRD_PARTY_NOTICES.md
+└── README.md
 ```
-
-The project structure continues to evolve with the implementation.
-
 ---
 
 ## 🚀 Building
@@ -504,39 +496,7 @@ Build the Ubuntu `.deb` from an Ubuntu 24.04 environment using `packaging/linux/
 - [x] Ubuntu command-line `.deb`
 - [x] GitHub Actions builds (Windows and Ubuntu; MSI lifecycle check passes)
 - [x] Automated tests (core and CLI validation; see CI for platform coverage)
-- [ ] Release pipeline
-
----
-
-## 🎚️ Future UI Concept
-
-```text
-┌──────────────────────────────────────────┐
-│ ClearMic                                 │
-├──────────────────────────────────────────┤
-│                                          │
-│ Microphone                               │
-│ [ Bluetooth Headset                  ▼ ] │
-│                                          │
-│ Input                                    │
-│ ███████████████░░░░░                     │
-│                                          │
-│ Enhance Microphone                [ ON ]  │
-│                                          │
-│ Noise Suppression                       │
-│ Low ───────────●──────────── High        │
-│                                          │
-│ Compressor                       [ ON ]  │
-│ Automatic Gain                   [ ON ]  │
-│ Noise Gate                       [ ON ]  │
-│                                          │
-│ Profile                                  │
-│ [ Natural ] [ Meeting ] [ Strong ]       │
-│                                          │
-│          [ Record A/B Test ]              │
-│                                          │
-└──────────────────────────────────────────┘
-```
+- [x] Draft release pipeline creates checksum-verified Windows MSI and Ubuntu .deb drafts after both platform CI jobs pass
 
 ---
 
