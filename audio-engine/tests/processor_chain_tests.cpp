@@ -23,6 +23,13 @@ void run_processor_chain_tests() {
     require(strong.noise_gate_enabled && strong.gate_threshold_db > meeting.gate_threshold_db,
             "Strong reduction preset should use a stronger gate threshold");
 
+    ProcessorChain settings_probe(1, meeting);
+    require(settings_probe.settings().compressor_enabled && settings_probe.settings().input_gain_db == 2.0F,
+            "Processor should retain preset controls");
+    settings_probe.set_settings(natural);
+    require(!settings_probe.settings().compressor_enabled && settings_probe.settings().input_gain_db == 0.0F,
+            "Processor controls should update without rebuilding the chain");
+
     auto settings = natural;
     settings.noise_suppression_enabled = false;
     ProcessorChain processor(1, settings);

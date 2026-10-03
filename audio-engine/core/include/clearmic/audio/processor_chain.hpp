@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <atomic>
 #include <span>
 #include <vector>
 
@@ -29,8 +30,8 @@ struct ProcessingSettings {
 class ProcessorChain {
 public:
     explicit ProcessorChain(std::uint16_t channels, ProcessingSettings settings = {});
-    void set_settings(ProcessingSettings settings) noexcept { settings_ = settings; }
-    [[nodiscard]] const ProcessingSettings& settings() const noexcept { return settings_; }
+    void set_settings(ProcessingSettings settings) noexcept;
+    [[nodiscard]] ProcessingSettings settings() const noexcept;
 
     // Accept arbitrary whole interleaved sample counts. RNNoise frames may
     // span calls; initial latency is filled with silence until one 10 ms frame
@@ -41,7 +42,14 @@ private:
     void process_frame() noexcept;
 
     std::uint16_t channels_;
-    ProcessingSettings settings_;
+    std::atomic<bool> enhancement_enabled_{true};
+    std::atomic<bool> noise_suppression_enabled_{true};
+    std::atomic<bool> noise_gate_enabled_{false};
+    std::atomic<bool> automatic_gain_enabled_{false};
+    std::atomic<bool> compressor_enabled_{false};
+    std::atomic<float> input_gain_db_{0.0F};
+    std::atomic<float> gate_threshold_db_{-48.0F};
+    std::atomic<float> compressor_threshold_db_{-18.0F};
     NoiseSuppressor noise_suppressor_;
     std::vector<std::int16_t> input_frame_;
     std::vector<std::int16_t> output_frame_;

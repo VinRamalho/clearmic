@@ -37,20 +37,45 @@ ProcessingSettings settings_for_preset(const Preset preset) noexcept {
 }
 
 ProcessorChain::ProcessorChain(const std::uint16_t channels, ProcessingSettings settings)
-    : channels_(channels), settings_(settings), noise_suppressor_(channels),
+    : channels_(channels), noise_suppressor_(channels),
       input_frame_(NoiseSuppressor::frame_samples * channels),
       output_frame_(NoiseSuppressor::frame_samples * channels) {
+    set_settings(settings);
     output_offset_ = output_frame_.size();
 }
 
+void ProcessorChain::set_settings(const ProcessingSettings settings) noexcept {
+    enhancement_enabled_.store(settings.enhancement_enabled, std::memory_order_relaxed);
+    noise_suppression_enabled_.store(settings.noise_suppression_enabled, std::memory_order_relaxed);
+    noise_gate_enabled_.store(settings.noise_gate_enabled, std::memory_order_relaxed);
+    automatic_gain_enabled_.store(settings.automatic_gain_enabled, std::memory_order_relaxed);
+    compressor_enabled_.store(settings.compressor_enabled, std::memory_order_relaxed);
+    input_gain_db_.store(settings.input_gain_db, std::memory_order_relaxed);
+    gate_threshold_db_.store(settings.gate_threshold_db, std::memory_order_relaxed);
+    compressor_threshold_db_.store(settings.compressor_threshold_db, std::memory_order_relaxed);
+}
+
+ProcessingSettings ProcessorChain::settings() const noexcept {
+    return ProcessingSettings{
+        .enhancement_enabled = enhancement_enabled_.load(std::memory_order_relaxed),
+        .noise_suppression_enabled = noise_suppression_enabled_.load(std::memory_order_relaxed),
+        .noise_gate_enabled = noise_gate_enabled_.load(std::memory_order_relaxed),
+        .automatic_gain_enabled = automatic_gain_enabled_.load(std::memory_order_relaxed),
+        .compressor_enabled = compressor_enabled_.load(std::memory_order_relaxed),
+        .input_gain_db = input_gain_db_.load(std::memory_order_relaxed),
+        .gate_threshold_db = gate_threshold_db_.load(std::memory_order_relaxed),
+        .compressor_threshold_db = compressor_threshold_db_.load(std::memory_order_relaxed)};
+}
+
 void ProcessorChain::process_frame() noexcept {
-    if (!settings_.enhancement_enabled) {
+    const auto current_settings = settings();
+    if (!current_settings.enhancement_enabled) {
         std::copy(input_frame_.begin(), input_frame_.end(), output_frame_.begin());
         input_samples_ = 0;
         output_offset_ = 0;
         return;
     }
-    if (settings_.noise_suppression_enabled)
+    if (current_settings.noise_suppression_enabled)
         noise_suppressor_.process(input_frame_, output_frame_);
     else
         std::copy(input_frame_.begin(), input_frame_.end(), output_frame_.begin());
@@ -61,10 +86,10 @@ void ProcessorChain::process_frame() noexcept {
         square_sum += value * value;
     }
     const auto rms = static_cast<float>(std::sqrt(square_sum / static_cast<double>(output_frame_.size())));
-    const auto automatic_gain_db = settings_.automatic_gain_enabled && rms > 1.0F
+    const auto automatic_gain_db = current_settings.automatic_gain_enabled && rms > 1.0F
         ? 20.0F * std::log10(8000.0F / rms)
         : 0.0F;
-    const auto requested_gain = std::clamp(db_to_linear(settings_.input_gain_db + automatic_gain_db),
+    const auto requested_gain = std::clamp(db_to_linear(current_settings.input_gain_db + automatic_gain_db),
                                            minimum_gain, maximum_gain);
     // Smooth gain changes to avoid clicks when a setting or preset changes.
     constexpr float gain_smoothing = 0.02F;
@@ -73,12 +98,12 @@ void ProcessorChain::process_frame() noexcept {
         gain_linear_ += (requested_gain - gain_linear_) * gain_smoothing;
         float sample = static_cast<float>(output_frame_[index]) * gain_linear_;
         const auto magnitude = std::abs(sample);
-        if (settings_.compressor_enabled) {
-            const auto threshold = db_to_linear(settings_.compressor_threshold_db) * 32768.0F;
+        if (current_settings.compressor_enabled) {
+            const auto threshold = db_to_linear(current_settings.compressor_threshold_db) * 32768.0F;
             if (magnitude > threshold) sample = std::copysign(threshold + (magnitude - threshold) * 0.25F, sample);
         }
-        if (settings_.noise_gate_enabled) {
-            const auto threshold = db_to_linear(settings_.gate_threshold_db) * 32768.0F;
+        if (current_settings.noise_gate_enabled) {
+            const auto threshold = db_to_linear(current_settings.gate_threshold_db) * 32768.0F;
             if (magnitude < threshold) sample = 0.0F;
         }
         output_frame_[index] = clip_sample(sample);
