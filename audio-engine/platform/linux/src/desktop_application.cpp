@@ -24,6 +24,7 @@ struct Application {
     GtkWidget* devices{};
     GtkWidget* preset{};
     GtkWidget* device_status{};
+    GtkWidget* diagnostics_status{};
     GtkWidget* service_status{};
     GtkWidget* input_meter{};
     GtkWidget* output_meter{};
@@ -54,6 +55,7 @@ struct Application {
     guint device_refresh_source{};
     std::string original_path;
     std::string processed_path;
+    std::string device_diagnostics;
     std::string active_device_id;
     std::string device_error;
     bool refreshing_devices{};
@@ -226,6 +228,10 @@ void update_device_status(Application& app) {
             ? "No microphone detected. Connect or enable a microphone, check that PipeWire and WirePlumber are running, then select Refresh devices."
             : app.device_error + ". Check that PipeWire and WirePlumber are running, then select Refresh devices.";
         gtk_label_set_text(GTK_LABEL(app.device_status), status.c_str());
+        app.device_diagnostics = "Backend: PipeWire\nInput device: unavailable\nDevice ID: unavailable\n"
+            "Input format: unavailable\nProcessing format: mono PCM16 at 48 kHz\n";
+        gtk_label_set_text(GTK_LABEL(app.diagnostics_status),
+            (app.device_diagnostics + "Capture, processing, and virtual-source timing: unavailable until enhancement is running.").c_str());
         return;
     }
     const auto& selected = app.inputs[static_cast<std::size_t>(index)];
@@ -254,6 +260,48 @@ void update_device_status(Application& app) {
         status += " · Battery not available";
     }
     gtk_label_set_text(GTK_LABEL(app.device_status), status.c_str());
+
+    std::ostringstream diagnostics;
+    diagnostics << "Backend: PipeWire\nInput device: " << selected.name << "\nDevice ID: " << selected.id
+                << "\nConnection: " << connection << "\nInput format: ";
+    if (selected.sample_rate_hz) diagnostics << *selected.sample_rate_hz << " Hz";
+    else diagnostics << "unavailable";
+    diagnostics << " / ";
+    if (selected.channels) diagnostics << *selected.channels << " channels";
+    else diagnostics << "channel count unavailable";
+    diagnostics << "\nProcessing format: mono PCM16 at 48 kHz (PipeWire may resample the input)";
+    if (selected.bluetooth_profile) diagnostics << "\nBluetooth profile: " << *selected.bluetooth_profile;
+    if (selected.bluetooth_codec) diagnostics << "\nBluetooth codec: " << *selected.bluetooth_codec;
+    if (selected.usb_vendor_id && selected.usb_product_id) {
+        diagnostics << "\nUSB VID:PID " << std::uppercase << std::hex << std::setfill('0')
+                    << std::setw(4) << *selected.usb_vendor_id << ':' << std::setw(4) << *selected.usb_product_id;
+    }
+    app.device_diagnostics = diagnostics.str();
+    gtk_label_set_text(GTK_LABEL(app.diagnostics_status),
+        (app.device_diagnostics + "Capture, processing, and virtual-source timing: unavailable until enhancement is running.").c_str());
+}
+
+void update_service_diagnostics(Application& app, const ServiceDiagnostics& diagnostics) {
+    std::ostringstream text;
+    text << app.device_diagnostics << "DSP maximum: " << std::fixed << std::setprecision(3)
+         << diagnostics.max_dsp_ms << " ms (" << std::setprecision(1) << diagnostics.max_dsp_budget_percent
+         << "% of packet duration); callback thread CPU: " << std::setprecision(3)
+         << diagnostics.max_dsp_thread_cpu_ms << " ms\n";
+    const bool timing_available = diagnostics.capture_graph_ms >= 0.0F && diagnostics.capture_queue_ms >= 0.0F &&
+        diagnostics.capture_buffered_ms >= 0.0F && diagnostics.source_graph_ms >= 0.0F &&
+        diagnostics.source_queue_ms >= 0.0F && diagnostics.source_buffered_ms >= 0.0F;
+    if (timing_available) {
+        text << std::setprecision(2) << "PipeWire reported capture delay: graph " << diagnostics.capture_graph_ms
+             << " + queued " << diagnostics.capture_queue_ms << " + buffered " << diagnostics.capture_buffered_ms
+             << " ms\nPipeWire reported virtual-source delay: graph " << diagnostics.source_graph_ms
+             << " + queued " << diagnostics.source_queue_ms << " + buffered " << diagnostics.source_buffered_ms
+             << " ms\nThese are backend timing components, not a measured end-to-end latency.\n";
+    } else {
+        text << "PipeWire capture and virtual-source timing: unavailable\n";
+    }
+    text << "Processed: " << diagnostics.processed_seconds << " s · Capture overruns: "
+         << diagnostics.capture_overruns << " · Virtual-source underruns: " << diagnostics.source_underruns;
+    gtk_label_set_text(GTK_LABEL(app.diagnostics_status), text.str().c_str());
 }
 
 void update_controls(Application& app) {
@@ -558,26 +606,7 @@ void read_service_output(GObject* source, GAsyncResult* result, gpointer user_da
             gtk_progress_bar_set_text(GTK_PROGRESS_BAR(app.output_meter), text);
         } else {
             ServiceDiagnostics diagnostics;
-            if (parse_service_diagnostics(line, diagnostics)) {
-                char text[512];
-                const bool complete_latency = diagnostics.capture_graph_ms >= 0.0F && diagnostics.capture_queue_ms >= 0.0F &&
-                    diagnostics.capture_buffered_ms >= 0.0F && diagnostics.source_graph_ms >= 0.0F &&
-                    diagnostics.source_queue_ms >= 0.0F && diagnostics.source_buffered_ms >= 0.0F;
-                if (complete_latency) {
-                    std::snprintf(text, sizeof(text),
-                        "DSP max %.3f ms (%.1f%% budget; thread CPU peak %.3f ms) · PipeWire reported delay capture %.2f + %.2f + %.2f; source %.2f + %.2f + %.2f ms · processed %llu s · overruns %llu/%llu",
-                        diagnostics.max_dsp_ms, diagnostics.max_dsp_budget_percent, diagnostics.max_dsp_thread_cpu_ms,
-                        diagnostics.capture_graph_ms, diagnostics.capture_queue_ms, diagnostics.capture_buffered_ms,
-                        diagnostics.source_graph_ms, diagnostics.source_queue_ms, diagnostics.source_buffered_ms,
-                        diagnostics.processed_seconds, diagnostics.capture_overruns, diagnostics.source_underruns);
-                } else {
-                    std::snprintf(text, sizeof(text),
-                        "DSP max %.3f ms (%.1f%% budget; thread CPU peak %.3f ms) · PipeWire route latency unavailable · processed %llu s · overruns %llu/%llu",
-                        diagnostics.max_dsp_ms, diagnostics.max_dsp_budget_percent, diagnostics.max_dsp_thread_cpu_ms,
-                        diagnostics.processed_seconds, diagnostics.capture_overruns, diagnostics.source_underruns);
-                }
-                gtk_label_set_text(GTK_LABEL(app.service_status), text);
-            }
+            if (parse_service_diagnostics(line, diagnostics)) update_service_diagnostics(app, diagnostics);
         }
         g_free(line);
         g_data_input_stream_read_line_async(app.service_output, G_PRIORITY_DEFAULT, app.output_cancel,
@@ -616,7 +645,7 @@ void launch_service(Application& app) {
     update_controls(app);
     app.service_output = g_data_input_stream_new(g_subprocess_get_stdout_pipe(app.service));
     app.output_cancel = g_cancellable_new();
-    gtk_label_set_text(GTK_LABEL(app.service_status), "ClearMic is processing locally. Select its virtual microphone in your audio application.");
+    gtk_label_set_text(GTK_LABEL(app.service_status), "ClearMic Virtual Microphone is active. Route timing appears under Diagnostics.");
     g_data_input_stream_read_line_async(app.service_output, G_PRIORITY_DEFAULT, app.output_cancel,
                                         read_service_output, &app);
     g_subprocess_wait_check_async(app.service, nullptr,
@@ -843,6 +872,13 @@ int run_desktop_application(const char* executable_path) {
     app.device_status = make_label("Discovering PipeWire microphones…");
     gtk_label_set_line_wrap(GTK_LABEL(app.device_status), TRUE);
     gtk_box_pack_start(GTK_BOX(layout), app.device_status, FALSE, FALSE, 0);
+    auto* diagnostics_expander = gtk_expander_new("Diagnostics · Advanced");
+    app.diagnostics_status = gtk_label_new("Backend: PipeWire\nInput device and format: unavailable");
+    gtk_label_set_xalign(GTK_LABEL(app.diagnostics_status), 0.0F);
+    gtk_label_set_line_wrap(GTK_LABEL(app.diagnostics_status), TRUE);
+    gtk_label_set_selectable(GTK_LABEL(app.diagnostics_status), TRUE);
+    gtk_container_add(GTK_CONTAINER(diagnostics_expander), app.diagnostics_status);
+    gtk_box_pack_start(GTK_BOX(layout), diagnostics_expander, FALSE, FALSE, 0);
 
     auto* device_buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     app.refresh_button = gtk_button_new_with_label("Refresh devices");
