@@ -9,6 +9,7 @@ The processing engine will consume and produce platform-independent PCM frames. 
 ## Current scope
 
 - Implemented: shared device and optional battery capability model, native input-device enumeration backends, CLI, and core model test.
+- The CLI can apply Xiph RNNoise to explicit 48 kHz PCM16 WAV files. This offline path is not live microphone capture.
 - Windows backend reads the default Windows audio mix format as device capability information. Battery and device-change monitoring are not implemented.
 - Linux backend requires PipeWire development headers (`libpipewire-0.3-dev`). Linux build/runtime validation requires a PipeWire system.
-- Processing, recording, virtual microphone, UI, persistent settings, and installers remain future work. This architecture does not claim those product features are available.
+- Live capture and processing, recording from a microphone, virtual microphone, UI, persistent settings, and installers remain future work. This architecture does not claim those product features are available.

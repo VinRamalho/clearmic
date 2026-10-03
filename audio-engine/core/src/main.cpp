@@ -1,4 +1,6 @@
 #include "clearmic/audio/device.hpp"
+#include "clearmic/audio/processing.hpp"
+#include "clearmic/audio/wav.hpp"
 
 #include <iostream>
 #include <memory>
@@ -12,10 +14,28 @@
 #endif
 
 namespace {
-void print_usage() { std::cout << "ClearMic audio tools\n\nUsage: clearmic-cli devices\n"; }
+void print_usage() {
+    std::cout << "ClearMic audio tools\n\n"
+                 "Usage:\n"
+                 "  clearmic-cli devices\n"
+                 "  clearmic-cli process <input.wav> <processed.wav>\n";
+}
 }
 
 int main(const int argc, char** argv) {
+    if (argc == 4 && std::string_view(argv[1]) == "process") {
+        try {
+            const auto original = clearmic::audio::read_pcm16_wav(argv[2]);
+            const auto processed = clearmic::audio::suppress_noise(original);
+            clearmic::audio::write_pcm16_wav(argv[3], processed);
+            std::cout << "Processed " << original.frame_count() << " frames at " << original.sample_rate_hz
+                      << " Hz and wrote " << argv[3] << "\n";
+        } catch (const std::exception& error) {
+            std::cerr << "Could not process audio: " << error.what() << "\n";
+            return 1;
+        }
+        return 0;
+    }
     if (argc != 2 || std::string_view(argv[1]) != "devices") {
         print_usage();
         return argc == 1 ? 0 : 2;

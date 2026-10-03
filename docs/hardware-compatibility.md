@@ -7,7 +7,7 @@
 - Input endpoint observed: `Microfone (Realtek(R) Audio)`.
 - Output endpoint observed: `Altofalantes (Realtek(R) Audio)`.
 - No Sony or USB wireless-microphone input endpoint appeared in the current AudioEndpoint list.
-- ClearMic capture and processing have not been tested; the application currently enumerates devices only.
+- ClearMic capture has not been tested. Offline WAV noise suppression is implemented, but no live audio is captured or processed yet.
 
 ### Sony WF-C710N
 
@@ -22,4 +22,4 @@
 - The MI_01 HID child list includes consumer-control, system-control, mouse, and vendor-defined usage page `0xFF00`, usage `0x000E`.
 - The raw HID report descriptor and feature reports have not yet been decoded or queried. Battery availability therefore remains **unknown**; no telemetry is shown or inferred.
 
-Battery and transmitter/receiver values remain unknown. The current inventory is passive PnP evidence only; audio capture, DSP, charging status, report telemetry, and virtual-microphone routing have not been tested.
+Battery and transmitter/receiver values remain unknown. The current inventory is passive PnP evidence only; hardware capture, charging status, report telemetry, and virtual-microphone routing have not been tested.

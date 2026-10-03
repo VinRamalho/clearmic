@@ -4,7 +4,7 @@
 
 ClearMic is an open-source, cross-platform desktop application designed to improve microphone voice quality in real time.
 
-> **Development status:** the C++20 device model, Windows WASAPI and Linux PipeWire input enumeration backends, and CLI build successfully on Windows and Ubuntu 24.04 in CI. Local hardware enumeration and audio capture have not yet been validated. Audio processing, the desktop UI, battery telemetry, virtual microphone, settings, and installers are not implemented yet. This is an early development project, not an installable product.
+> **Development status:** the C++20 device model, Windows WASAPI and Linux PipeWire input enumeration backends, CLI, and RNNoise WAV processing path build on Windows and Ubuntu 24.04 in CI. The offline processor accepts 48 kHz, 16-bit PCM WAV with one or two channels. Local device enumeration has not yet been run through the ClearMic binary. Live capture and processing, the desktop UI, battery telemetry, virtual microphone, settings, and installers remain unimplemented. This is an early development project, not an installable product.
 
 It aims to reduce background noise, echo, room reverberation, and inconsistent microphone levels while preserving a natural-sounding voice.
 
@@ -169,13 +169,11 @@ Platform-specific implementations are isolated behind common interfaces.
 
 ClearMic is being designed around proven audio-processing techniques rather than proprietary cloud processing.
 
-Technologies being evaluated include:
+The current offline processor uses:
 
-- WebRTC Audio Processing Module
 - RNNoise
-- Native DSP implementations where appropriate
 
-The processing pipeline is modular so individual processors can be enabled, disabled, or configured independently.
+WebRTC Audio Processing Module has not been integrated. A live processing pipeline and configurable processors remain future work.
 
 A possible pipeline looks like:
 
@@ -282,11 +280,8 @@ The current architecture targets:
 
 ### Audio processing
 
-Candidates include:
-
-- WebRTC Audio Processing
-- RNNoise
-- Custom lightweight DSP where appropriate
+- RNNoise for explicit offline 48 kHz PCM16 WAV processing
+- WebRTC Audio Processing and additional DSP remain under evaluation for live capture and playback-reference AEC
 
 ### Desktop UI
 
@@ -355,6 +350,13 @@ Target environment:
 - C++20 compatible compiler
 - CMake
 
+Install the current build dependencies with:
+
+```bash
+sudo apt update
+sudo apt install build-essential cmake pkg-config libpipewire-0.3-dev
+```
+
 The intended development workflow is:
 
 ```bash
@@ -365,11 +367,21 @@ cmake -S . -B build
 cmake --build build
 ```
 
+The first CMake configure downloads the pinned RNNoise source and model archives and verifies their SHA-256 hashes. An internet connection is required unless those archives are already cached in the build directory.
+
 Once the CLI is available:
 
 ```bash
 ./build/clearmic-cli devices
 ```
+
+Offline noise suppression for an existing WAV file:
+
+```bash
+./build/clearmic-cli process original.wav processed.wav
+```
+
+The current processor accepts PCM 16-bit WAV at 48 kHz with one or two channels. It rejects other sample rates and encodings rather than silently passing audio through.
 
 Example expected output:
 
@@ -433,9 +445,9 @@ After installation, ClearMic should be available from the desktop application me
 
 ### Phase 1 — Foundation
 
-- [ ] Project architecture
-- [ ] CMake build system
-- [ ] Common audio abstractions
+- [x] Project architecture
+- [x] CMake build system (Windows and Ubuntu CI)
+- [x] Common audio/device abstractions
 - [ ] Linux / PipeWire device discovery
 - [ ] Windows / WASAPI device discovery
 - [ ] CLI device enumeration
@@ -449,7 +461,8 @@ After installation, ClearMic should be available from the desktop application me
 
 ### Phase 3 — Audio Processing
 
-- [ ] Noise suppression
+- [x] Offline RNNoise processing for supported WAV files
+- [ ] Live noise suppression
 - [ ] Automatic gain control
 - [ ] Noise gate
 - [ ] Compression
