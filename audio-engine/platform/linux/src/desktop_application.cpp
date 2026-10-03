@@ -483,6 +483,20 @@ void read_service_output(GObject* source, GAsyncResult* result, gpointer user_da
             gtk_progress_bar_set_text(GTK_PROGRESS_BAR(app.input_meter), text);
             std::snprintf(text, sizeof(text), "Processed %.0f%%", output * 100.0F);
             gtk_progress_bar_set_text(GTK_PROGRESS_BAR(app.output_meter), text);
+        } else {
+            float max_dsp_ms = 0.0F;
+            float max_dsp_budget = 0.0F;
+            unsigned long long overruns = 0;
+            unsigned long long underruns = 0;
+            unsigned long long processed_seconds = 0;
+            if (std::sscanf(line, "DIAG %f %f %llu %llu %llu", &max_dsp_ms, &max_dsp_budget,
+                            &overruns, &underruns, &processed_seconds) == 5) {
+                char text[192];
+                std::snprintf(text, sizeof(text),
+                    "DSP max %.3f ms (%.1f%% of packet budget) · processed %llu s · capture overruns %llu · source underruns %llu",
+                    max_dsp_ms, max_dsp_budget, processed_seconds, overruns, underruns);
+                gtk_label_set_text(GTK_LABEL(app.service_status), text);
+            }
         }
         g_free(line);
         g_data_input_stream_read_line_async(app.service_output, G_PRIORITY_DEFAULT, app.output_cancel,

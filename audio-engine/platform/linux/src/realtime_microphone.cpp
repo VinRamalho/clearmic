@@ -67,6 +67,8 @@ struct Session {
     std::atomic<std::uint64_t> capture_overruns{};
     std::atomic<std::uint64_t> source_underruns{};
     std::atomic<std::uint64_t> processed_samples{};
+    std::atomic<float> max_dsp_ms{};
+    std::atomic<float> max_dsp_budget_percent{};
     std::atomic<float> input_rms{};
     std::atomic<float> output_rms{};
     pw_stream* capture{};
@@ -89,9 +91,13 @@ void on_diagnostics_timer(void* data, std::uint64_t) {
     const auto processed = session.processed_samples.load(std::memory_order_relaxed);
     const auto overruns = session.capture_overruns.load(std::memory_order_relaxed);
     const auto underruns = session.source_underruns.load(std::memory_order_relaxed);
+    const auto max_dsp_ms = session.max_dsp_ms.load(std::memory_order_relaxed);
+    const auto max_dsp_budget = session.max_dsp_budget_percent.load(std::memory_order_relaxed);
     const auto input_level = session.input_rms.load(std::memory_order_relaxed);
     const auto output_level = session.output_rms.load(std::memory_order_relaxed);
-    std::cout << "METER " << input_level << ' ' << output_level << '\n' << std::flush;
+    std::cout << "METER " << input_level << ' ' << output_level << '\n'
+              << "DIAG " << max_dsp_ms << ' ' << max_dsp_budget << ' '
+              << overruns << ' ' << underruns << ' ' << processed / 48000 << '\n' << std::flush;
     if (processed != diagnostics.last_processed || overruns != 0 || underruns != 0) {
         std::clog << "ClearMic metrics: processed=" << processed / 48000 << "s"
                   << " capture_overruns=" << overruns << " source_underruns=" << underruns << '\n';
@@ -151,7 +157,20 @@ void capture_process(void* data) {
         pw_main_loop_quit(session.loop);
         return;
     }
+    const auto process_start = std::chrono::steady_clock::now();
     session.processor.process(std::span<const std::int16_t>(input, count), std::span<std::int16_t>(session.callback_output).first(count));
+    const auto process_end = std::chrono::steady_clock::now();
+    if (count != 0) {
+        const auto elapsed_ms = std::chrono::duration<float, std::milli>(process_end - process_start).count();
+        const auto packet_ms = static_cast<float>(count) * 1000.0F / 48000.0F;
+        const auto budget_percent = elapsed_ms * 100.0F / packet_ms;
+        auto max_ms = session.max_dsp_ms.load(std::memory_order_relaxed);
+        while (elapsed_ms > max_ms && !session.max_dsp_ms.compare_exchange_weak(
+                   max_ms, elapsed_ms, std::memory_order_relaxed, std::memory_order_relaxed)) {}
+        auto max_budget = session.max_dsp_budget_percent.load(std::memory_order_relaxed);
+        while (budget_percent > max_budget && !session.max_dsp_budget_percent.compare_exchange_weak(
+                   max_budget, budget_percent, std::memory_order_relaxed, std::memory_order_relaxed)) {}
+    }
     double input_square_sum = 0.0;
     double output_square_sum = 0.0;
     for (std::size_t index = 0; index < count; ++index) {
