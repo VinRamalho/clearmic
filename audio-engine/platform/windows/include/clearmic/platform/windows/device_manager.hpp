@@ -26,6 +26,7 @@ struct CaptureDiagnostics {
 };
 
 struct LiveProcessingMetrics {
+    std::atomic_bool enhancement_enabled{true};
     std::atomic<float> input_rms{};
     std::atomic<float> output_rms{};
     std::atomic<std::uint32_t> capture_buffer_frames{};

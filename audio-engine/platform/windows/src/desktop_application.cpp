@@ -386,7 +386,7 @@ void update_controls(Application& app) {
     EnableWindow(app.noise_gate, idle);
     EnableWindow(app.automatic_gain, idle);
     EnableWindow(app.compressor, idle);
-    EnableWindow(app.enhancement, idle);
+    EnableWindow(app.enhancement, idle || app.live_routing);
     EnableWindow(app.input_gain, idle);
     EnableWindow(app.play_original, idle && app.samples_ready);
     EnableWindow(app.play_processed, idle && app.samples_ready);
@@ -488,6 +488,7 @@ audio::ProcessingSettings current_settings(const Application& app) {
 
 void save_processing_settings(Application& app) {
     const auto settings = current_settings(app);
+    app.live_metrics.enhancement_enabled.store(settings.enhancement_enabled, std::memory_order_relaxed);
     write_setting(app, L"processing", L"preset",
         selected_preset(app) == audio::Preset::meeting ? L"meeting" :
         (selected_preset(app) == audio::Preset::strong_noise_reduction ? L"strong" : L"natural"));
@@ -594,6 +595,7 @@ void toggle_live_route(Application& app) {
         return;
     }
     const auto settings = current_settings(app);
+    app.live_metrics.enhancement_enabled.store(settings.enhancement_enabled, std::memory_order_relaxed);
     app.stop_live_route.store(false, std::memory_order_relaxed);
     app.live_metrics.input_rms.store(0.0F, std::memory_order_relaxed);
     app.live_metrics.output_rms.store(0.0F, std::memory_order_relaxed);

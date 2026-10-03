@@ -237,7 +237,9 @@ void run_live_processing(const std::string& input_device_id, const std::string& 
     std::memset(startup_data, 0, render_buffer_frames * sizeof(std::int16_t));
     check_hresult(render->ReleaseBuffer(render_buffer_frames, 0), "Prime processed audio output buffer");
 
-    audio::ProcessorChain processor(1, settings);
+    auto active_settings = settings;
+    audio::ProcessorChain processor(1, active_settings);
+    bool enhancement_enabled = active_settings.enhancement_enabled;
     AudioRing queue;
     bool saw_overrun = false;
     struct StreamGuard {
@@ -276,7 +278,15 @@ void run_live_processing(const std::string& input_device_id, const std::string& 
         const bool render_ready = wait == WAIT_OBJECT_0 + 1 ||
             WaitForSingleObject(render_event.get(), 0) == WAIT_OBJECT_0;
         if (render_ready) render_queued(output_client.get(), render.get(), queue, render_buffer);
-        if (capture_ready) drain_capture(capture.get(), processor, queue, saw_overrun, metrics);
+        if (capture_ready) {
+            const bool requested_enhancement = metrics.enhancement_enabled.load(std::memory_order_relaxed);
+            if (requested_enhancement != enhancement_enabled) {
+                active_settings.enhancement_enabled = requested_enhancement;
+                processor.set_settings(active_settings);
+                enhancement_enabled = requested_enhancement;
+            }
+            drain_capture(capture.get(), processor, queue, saw_overrun, metrics);
+        }
         if (saw_overrun) throw std::runtime_error("Live audio output could not keep up; stop and restart the route");
     }
 }
