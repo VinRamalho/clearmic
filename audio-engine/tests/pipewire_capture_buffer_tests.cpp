@@ -1,10 +1,12 @@
 #include "clearmic/platform/linux/capture_buffer.hpp"
+#include "clearmic/platform/linux/pipewire_latency.hpp"
 #include "clearmic/platform/linux/realtime_audio_ring.hpp"
 #include "clearmic/platform/linux/source_buffer.hpp"
 
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
@@ -21,6 +23,7 @@ void require(const bool condition, const char* message) {
 
 int main() {
     using clearmic::platform::pipewire::aligned_pcm16_chunk;
+    using clearmic::platform::pipewire::stream_latency_ms;
     using clearmic::platform::pipewire::source_sample_count;
     using clearmic::platform::pipewire::valid_capture_chunk_range;
 
@@ -41,6 +44,13 @@ int main() {
             "A missing request should fall back to the complete allocation capacity");
     require(!source_sample_count(4097, 8192), "Requests beyond the mapped allocation should be rejected");
     require(!source_sample_count(1, 8191), "A PCM16 allocation with an odd byte count should be rejected");
+    const auto latency = stream_latency_ms(480, 240, 120, 1, 48000, 48000);
+    require(latency && std::abs(latency->graph_ms - 10.0F) < 0.001F &&
+            std::abs(latency->queued_ms - 5.0F) < 0.001F &&
+            std::abs(latency->buffered_ms - 2.5F) < 0.001F,
+            "PipeWire graph, queued, and buffered durations should use their documented time bases");
+    const auto unavailable_latency = stream_latency_ms(480, 240, 120, 0, 48000, 48000);
+    require(!unavailable_latency, "Invalid PipeWire clock rates should leave stream latency unavailable");
 
     using clearmic::platform::pipewire::RealtimeAudioRing;
     RealtimeAudioRing ring;

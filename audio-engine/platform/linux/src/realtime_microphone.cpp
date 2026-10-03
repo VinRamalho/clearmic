@@ -1,4 +1,5 @@
 #include "clearmic/platform/linux/device_manager.hpp"
+#include "clearmic/platform/linux/pipewire_latency.hpp"
 #include "clearmic/platform/linux/realtime_audio_ring.hpp"
 #include "clearmic/platform/linux/source_buffer.hpp"
 
@@ -47,6 +48,12 @@ struct Session {
     std::atomic<std::uint64_t> processed_samples{};
     std::atomic<float> max_dsp_ms{};
     std::atomic<float> max_dsp_budget_percent{};
+    std::atomic<float> capture_graph_latency_ms{-1.0F};
+    std::atomic<float> capture_queue_latency_ms{-1.0F};
+    std::atomic<float> capture_resampler_latency_ms{-1.0F};
+    std::atomic<float> source_graph_latency_ms{-1.0F};
+    std::atomic<float> source_queue_latency_ms{-1.0F};
+    std::atomic<float> source_resampler_latency_ms{-1.0F};
     std::atomic<float> input_rms{};
     std::atomic<float> output_rms{};
     pw_stream* capture{};
@@ -109,9 +116,17 @@ void on_diagnostics_timer(void* data, std::uint64_t) {
     const auto max_dsp_budget = session.max_dsp_budget_percent.load(std::memory_order_relaxed);
     const auto input_level = session.input_rms.load(std::memory_order_relaxed);
     const auto output_level = session.output_rms.load(std::memory_order_relaxed);
+    const auto capture_graph_ms = session.capture_graph_latency_ms.load(std::memory_order_relaxed);
+    const auto capture_queue_ms = session.capture_queue_latency_ms.load(std::memory_order_relaxed);
+    const auto capture_buffered_ms = session.capture_resampler_latency_ms.load(std::memory_order_relaxed);
+    const auto source_graph_ms = session.source_graph_latency_ms.load(std::memory_order_relaxed);
+    const auto source_queue_ms = session.source_queue_latency_ms.load(std::memory_order_relaxed);
+    const auto source_buffered_ms = session.source_resampler_latency_ms.load(std::memory_order_relaxed);
     std::cout << "METER " << input_level << ' ' << output_level << '\n'
               << "DIAG " << max_dsp_ms << ' ' << max_dsp_budget << ' '
-              << overruns << ' ' << underruns << ' ' << processed / 48000 << '\n' << std::flush;
+              << overruns << ' ' << underruns << ' ' << processed / 48000 << ' '
+              << capture_graph_ms << ' ' << capture_queue_ms << ' ' << capture_buffered_ms << ' '
+              << source_graph_ms << ' ' << source_queue_ms << ' ' << source_buffered_ms << '\n' << std::flush;
     if (processed != diagnostics.last_processed || overruns != 0 || underruns != 0) {
         std::clog << "ClearMic metrics: processed=" << processed / 48000 << "s"
                   << " capture_overruns=" << overruns << " source_underruns=" << underruns << '\n';
@@ -144,6 +159,16 @@ void capture_process(void* data) {
     auto* buffer = pw_stream_dequeue_buffer(session.capture);
     if (!buffer) return;
     auto* b = buffer->buffer;
+    pw_time time{};
+    if (pw_stream_get_time_n(session.capture, &time, sizeof(time)) >= 0) {
+        const auto latency = stream_latency_ms(time.delay, time.queued, time.buffered,
+            time.rate.num, time.rate.denom, 48000);
+        if (latency) {
+            session.capture_graph_latency_ms.store(latency->graph_ms, std::memory_order_relaxed);
+            session.capture_queue_latency_ms.store(latency->queued_ms, std::memory_order_relaxed);
+            session.capture_resampler_latency_ms.store(latency->buffered_ms, std::memory_order_relaxed);
+        }
+    }
     if (!b || b->n_datas == 0 || !b->datas[0].data || !b->datas[0].chunk ||
         b->datas[0].chunk->stride != static_cast<int>(sizeof(std::int16_t))) {
         const bool failed = set_stream_error(session, StreamError::unsupported_capture_buffer);
@@ -210,6 +235,16 @@ void source_process(void* data) {
     auto* buffer = pw_stream_dequeue_buffer(session.source);
     if (!buffer) return;
     auto* b = buffer->buffer;
+    pw_time time{};
+    if (pw_stream_get_time_n(session.source, &time, sizeof(time)) >= 0) {
+        const auto latency = stream_latency_ms(time.delay, time.queued, time.buffered,
+            time.rate.num, time.rate.denom, 48000);
+        if (latency) {
+            session.source_graph_latency_ms.store(latency->graph_ms, std::memory_order_relaxed);
+            session.source_queue_latency_ms.store(latency->queued_ms, std::memory_order_relaxed);
+            session.source_resampler_latency_ms.store(latency->buffered_ms, std::memory_order_relaxed);
+        }
+    }
     if (!b || b->n_datas == 0 || !b->datas[0].data || !b->datas[0].chunk) {
         const bool failed = set_stream_error(session, StreamError::unsupported_source_buffer);
         pw_stream_queue_buffer(session.source, buffer);

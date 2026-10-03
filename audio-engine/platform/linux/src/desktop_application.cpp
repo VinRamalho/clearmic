@@ -535,12 +535,32 @@ void read_service_output(GObject* source, GAsyncResult* result, gpointer user_da
             unsigned long long overruns = 0;
             unsigned long long underruns = 0;
             unsigned long long processed_seconds = 0;
-            if (std::sscanf(line, "DIAG %f %f %llu %llu %llu", &max_dsp_ms, &max_dsp_budget,
-                            &overruns, &underruns, &processed_seconds) == 5) {
-                char text[192];
-                std::snprintf(text, sizeof(text),
-                    "DSP max %.3f ms (%.1f%% of packet budget) · processed %llu s · capture overruns %llu · source underruns %llu",
-                    max_dsp_ms, max_dsp_budget, processed_seconds, overruns, underruns);
+            float capture_graph_ms = 0.0F;
+            float capture_queue_ms = 0.0F;
+            float capture_buffered_ms = 0.0F;
+            float source_graph_ms = 0.0F;
+            float source_queue_ms = 0.0F;
+            float source_buffered_ms = 0.0F;
+            if (std::sscanf(line, "DIAG %f %f %llu %llu %llu %f %f %f %f %f %f",
+                            &max_dsp_ms, &max_dsp_budget,
+                            &overruns, &underruns, &processed_seconds,
+                            &capture_graph_ms, &capture_queue_ms, &capture_buffered_ms,
+                            &source_graph_ms, &source_queue_ms, &source_buffered_ms) == 11) {
+                char text[320];
+                const bool complete_latency = capture_graph_ms >= 0.0F && capture_queue_ms >= 0.0F && capture_buffered_ms >= 0.0F &&
+                    source_graph_ms >= 0.0F && source_queue_ms >= 0.0F && source_buffered_ms >= 0.0F;
+                if (complete_latency) {
+                    const auto estimated_route_ms = max_dsp_ms + capture_graph_ms + capture_queue_ms + capture_buffered_ms +
+                        source_graph_ms + source_queue_ms + source_buffered_ms;
+                    std::snprintf(text, sizeof(text),
+                        "DSP max %.3f ms (%.1f%% budget) · estimated route %.2f ms (capture %.2f + %.2f + %.2f; source %.2f + %.2f + %.2f ms) · processed %llu s · overruns %llu/%llu",
+                        max_dsp_ms, max_dsp_budget, estimated_route_ms, capture_graph_ms, capture_queue_ms, capture_buffered_ms,
+                        source_graph_ms, source_queue_ms, source_buffered_ms, processed_seconds, overruns, underruns);
+                } else {
+                    std::snprintf(text, sizeof(text),
+                        "DSP max %.3f ms (%.1f%% budget) · PipeWire route latency unavailable · processed %llu s · overruns %llu/%llu",
+                        max_dsp_ms, max_dsp_budget, processed_seconds, overruns, underruns);
+                }
                 gtk_label_set_text(GTK_LABEL(app.service_status), text);
             }
         }
