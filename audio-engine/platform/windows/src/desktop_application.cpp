@@ -555,7 +555,7 @@ void begin_recording(Application& app) {
                     return value + L"%";
                 };
                 completion->message = completion->input_rms < 0.001
-                    ? L"A/B sample ready, but little or no microphone signal was detected. Check mute, Windows microphone privacy, and the selected input."
+                    ? L"Little or no microphone signal was detected, so these diagnostic samples may be silent or too quiet for a useful A/B comparison. Check mute, Windows microphone privacy, and the selected input."
                     : L"A/B sample ready. Microphone activity was detected.";
                 completion->message += L" Input RMS: " + trim_percent(input_percent) +
                     L" · processed RMS: " + trim_percent(output_percent);

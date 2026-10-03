@@ -152,7 +152,8 @@ int main(const int argc, char** argv) {
                       << "Input RMS: " << input_rms * 100.0 << "%\n"
                       << "Processed RMS: " << output_rms * 100.0 << "%\n";
             if (input_rms < 0.001)
-                std::cout << "Warning: Little or no microphone signal detected; check mute, OS microphone permissions, and the selected input.\n";
+                std::cout << "Warning: Little or no microphone signal detected; check mute, OS microphone permissions, and the selected input.\n"
+                          << "The WAV files are diagnostic samples and may be silent or too quiet for a useful A/B comparison.\n";
 #ifdef _WIN32
             if (diagnostics.buffer_frames)
                 std::cout << "WASAPI capture buffer: " << *diagnostics.buffer_frames << " frames\n";
