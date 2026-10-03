@@ -35,8 +35,10 @@ struct Application {
     GCancellable* output_cancel{};
     GstElement* player{};
     guint player_bus_watch{};
+    guint device_refresh_source{};
     std::string original_path;
     std::string processed_path;
+    bool refreshing_devices{};
 };
 
 std::string settings_path() {
@@ -140,6 +142,7 @@ void update_controls(Application& app) {
 }
 
 void refresh_devices(Application& app) {
+    app.refreshing_devices = true;
     const auto preferred = stored_device_id();
     try {
         app.inputs = DeviceManager{}.input_devices();
@@ -172,10 +175,12 @@ void refresh_devices(Application& app) {
     if (active >= 0) gtk_combo_box_set_active(GTK_COMBO_BOX(app.devices), active);
     update_device_status(app);
     update_controls(app);
+    app.refreshing_devices = false;
 }
 
 void on_device_changed(GtkComboBox* combo, gpointer data) {
     auto& app = *static_cast<Application*>(data);
+    if (app.refreshing_devices) return;
     const int index = gtk_combo_box_get_active(combo);
     if (index < 0 || static_cast<std::size_t>(index) >= app.inputs.size()) return;
     save_device_id(app.inputs[static_cast<std::size_t>(index)].id);
@@ -191,6 +196,12 @@ void on_preset_changed(GtkComboBox* combo, gpointer) {
 }
 
 void on_refresh(GtkButton*, gpointer data) { refresh_devices(*static_cast<Application*>(data)); }
+
+gboolean on_device_refresh_timer(gpointer data) {
+    auto& app = *static_cast<Application*>(data);
+    if (!app.service && !app.test_capture) refresh_devices(app);
+    return G_SOURCE_CONTINUE;
+}
 
 gboolean on_player_message(GstBus*, GstMessage* message, gpointer user_data) {
     auto& app = *static_cast<Application*>(user_data);
@@ -387,6 +398,7 @@ void on_window_destroy(GtkWidget*, gpointer data) {
         g_subprocess_wait(app.test_capture, nullptr, nullptr);
     }
     if (app.player) gst_element_set_state(app.player, GST_STATE_NULL);
+    if (app.device_refresh_source) g_source_remove(app.device_refresh_source);
     if (app.player_bus_watch) g_source_remove(app.player_bus_watch);
     g_clear_object(&app.player);
     g_clear_object(&app.service_output);
@@ -497,6 +509,7 @@ int run_desktop_application(const char* executable_path) {
     const int preset_index = preset == "meeting" ? 1 : (preset == "strong" ? 2 : 0);
     gtk_combo_box_set_active(GTK_COMBO_BOX(app.preset), preset_index);
     refresh_devices(app);
+    app.device_refresh_source = g_timeout_add_seconds(3, on_device_refresh_timer, &app);
     gtk_widget_show_all(app.window);
     gtk_main();
     g_free(resolved);
