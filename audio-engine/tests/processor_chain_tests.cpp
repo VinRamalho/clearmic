@@ -9,6 +9,15 @@ namespace {
 void require(const bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
 }
+
+std::array<std::int16_t, clearmic::audio::NoiseSuppressor::frame_samples> process_constant_frame(
+    clearmic::audio::ProcessorChain& processor, const std::int16_t value) {
+    std::array<std::int16_t, clearmic::audio::NoiseSuppressor::frame_samples> input{};
+    std::array<std::int16_t, clearmic::audio::NoiseSuppressor::frame_samples> output{};
+    input.fill(value);
+    processor.process(input, output);
+    return output;
+}
 }
 
 void run_processor_chain_tests() {
@@ -74,4 +83,31 @@ void run_processor_chain_tests() {
             std::all_of(next_frame_output.begin() + 160, next_frame_output.end(),
                         [](const auto value) { return value == 5000; }),
             "Disabling enhancement should bypass DSP while preserving pipeline latency");
+
+    auto synthetic_settings = natural;
+    synthetic_settings.noise_suppression_enabled = false;
+    synthetic_settings.input_gain_db = 6.0F;
+    ProcessorChain gain_processor(1, synthetic_settings);
+    (void)process_constant_frame(gain_processor, 1000); // Fills the initial latency frame.
+    const auto gained = process_constant_frame(gain_processor, 1000);
+    require(gained.back() >= 1950 && gained.back() <= 2050,
+            "Input gain should reach the configured +6 dB level on a steady synthetic signal");
+
+    synthetic_settings.input_gain_db = 0.0F;
+    synthetic_settings.noise_gate_enabled = true;
+    synthetic_settings.gate_threshold_db = -30.0F;
+    ProcessorChain gate_processor(1, synthetic_settings);
+    (void)process_constant_frame(gate_processor, 500);
+    const auto gated = process_constant_frame(gate_processor, 500);
+    require(std::all_of(gated.begin(), gated.end(), [](const auto value) { return value == 0; }),
+            "Noise gate should mute a steady synthetic signal below its configured threshold");
+
+    synthetic_settings.noise_gate_enabled = false;
+    synthetic_settings.compressor_enabled = true;
+    synthetic_settings.compressor_threshold_db = -18.0F;
+    ProcessorChain compressor_processor(1, synthetic_settings);
+    (void)process_constant_frame(compressor_processor, 16000);
+    const auto compressed = process_constant_frame(compressor_processor, 16000);
+    require(compressed.back() > 7000 && compressed.back() < 8000,
+            "Compressor should reduce a steady synthetic signal above its threshold");
 }
