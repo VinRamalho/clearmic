@@ -359,7 +359,7 @@ void run_realtime_microphone(const std::string& device_id, const audio::Processi
     auto* source_props = pw_properties_new(PW_KEY_MEDIA_TYPE, "Audio", PW_KEY_MEDIA_CATEGORY, "Capture",
         PW_KEY_MEDIA_ROLE, "Communication", PW_KEY_MEDIA_CLASS, "Audio/Source",
         PW_KEY_NODE_NAME, "clearmic_virtual_microphone", PW_KEY_NODE_DESCRIPTION, "ClearMic Virtual Microphone",
-        PW_KEY_NODE_VIRTUAL, "true", PW_KEY_NODE_ALWAYS_PROCESS, "true", nullptr);
+        PW_KEY_NODE_VIRTUAL, "true", nullptr);
     if (!source_props) throw std::runtime_error("Could not allocate PipeWire virtual source properties");
     create_stream(runtime.core, runtime.session, "ClearMic Virtual Microphone", source_props,
                   &runtime.session.source_listener, &source_events, &runtime.session.source);
