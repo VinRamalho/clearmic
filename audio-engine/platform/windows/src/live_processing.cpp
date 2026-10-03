@@ -252,7 +252,21 @@ void run_live_processing(const std::string& input_device_id, const std::string& 
     HANDLE events[]{capture_event.get(), render_event.get()};
     while (!stop_requested.load(std::memory_order_relaxed)) {
         const DWORD wait = WaitForMultipleObjects(2, events, FALSE, 1000);
-        if (wait == WAIT_TIMEOUT) continue;
+        if (wait == WAIT_TIMEOUT) {
+            // A removed endpoint can stop delivering event signals entirely. Poll
+            // the clients on the bounded timeout so the UI can report the loss
+            // and refresh its device list instead of leaving the route stuck.
+            UINT32 ignored_padding = 0;
+            const HRESULT capture_status = input_client->GetCurrentPadding(&ignored_padding);
+            if (capture_status == AUDCLNT_E_DEVICE_INVALIDATED)
+                throw std::runtime_error("The selected microphone disconnected during live processing");
+            check_hresult(capture_status, "Check live microphone connection");
+            const HRESULT render_status = output_client->GetCurrentPadding(&ignored_padding);
+            if (render_status == AUDCLNT_E_DEVICE_INVALIDATED)
+                throw std::runtime_error("The selected virtual-cable playback endpoint disconnected during live processing");
+            check_hresult(render_status, "Check processed audio output connection");
+            continue;
+        }
         if (wait == WAIT_FAILED)
             throw std::system_error(static_cast<int>(GetLastError()), std::system_category(), "Wait for WASAPI audio event");
         if (wait != WAIT_OBJECT_0 && wait != WAIT_OBJECT_0 + 1)
