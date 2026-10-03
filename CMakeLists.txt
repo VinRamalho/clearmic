@@ -85,6 +85,20 @@ add_library(rnnoise STATIC
     "${_rnnoise_source_root}/src/parse_lpcnet_weights.c"
     "${_rnnoise_source_root}/src/rnnoise_tables.c"
     "${_rnnoise_model_root}/src/rnnoise_data.c")
+if(UNIX AND NOT APPLE AND
+   CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i[3-6]86|x86)$" AND
+   CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+    target_sources(rnnoise PRIVATE
+        "${_rnnoise_source_root}/src/x86/x86_dnn_map.c"
+        "${_rnnoise_source_root}/src/x86/x86cpu.c"
+        "${_rnnoise_source_root}/src/x86/nnet_sse4_1.c"
+        "${_rnnoise_source_root}/src/x86/nnet_avx2.c")
+    target_compile_definitions(rnnoise PRIVATE RNN_ENABLE_X86_RTCD CPU_INFO_BY_C)
+    set_source_files_properties("${_rnnoise_source_root}/src/x86/nnet_sse4_1.c"
+        PROPERTIES COMPILE_OPTIONS "-msse4.1")
+    set_source_files_properties("${_rnnoise_source_root}/src/x86/nnet_avx2.c"
+        PROPERTIES COMPILE_OPTIONS "-mavx;-mfma;-mavx2")
+endif()
 target_include_directories(rnnoise PUBLIC
     "${_rnnoise_source_root}/include"
     "${_rnnoise_source_root}/src"

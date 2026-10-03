@@ -91,6 +91,9 @@ void ProcessorChain::process_frame() noexcept {
         : 0.0F;
     const auto requested_gain = std::clamp(db_to_linear(current_settings.input_gain_db + automatic_gain_db),
                                            minimum_gain, maximum_gain);
+    const auto compressor_threshold = current_settings.compressor_enabled
+        ? db_to_linear(current_settings.compressor_threshold_db) * 32768.0F
+        : 0.0F;
     constexpr float gate_open_hysteresis = 2.0F; // 6 dB above the close threshold.
     constexpr float gate_attack_smoothing = 0.004158F; // 5 ms at 48 kHz.
     constexpr float gate_release_smoothing = 0.000260F; // 80 ms at 48 kHz.
@@ -115,8 +118,8 @@ void ProcessorChain::process_frame() noexcept {
         float sample = static_cast<float>(output_frame_[index]) * gain_linear_;
         const auto magnitude = std::abs(sample);
         if (current_settings.compressor_enabled) {
-            const auto threshold = db_to_linear(current_settings.compressor_threshold_db) * 32768.0F;
-            if (magnitude > threshold) sample = std::copysign(threshold + (magnitude - threshold) * 0.25F, sample);
+            if (magnitude > compressor_threshold)
+                sample = std::copysign(compressor_threshold + (magnitude - compressor_threshold) * 0.25F, sample);
         }
         if (current_settings.noise_gate_enabled)
             gate_gain_ += (gate_target - gate_gain_) *
