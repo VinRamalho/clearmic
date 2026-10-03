@@ -32,7 +32,7 @@ Section: sound
 Priority: optional
 Architecture: amd64
 Maintainer: ClearMic contributors
-Depends: libpipewire-0.3-0, libc6, libstdc++6
+Depends: libpipewire-0.3-0, libgtk-3-0, libc6, libstdc++6
 Description: Local microphone enhancement tools
  ClearMic captures a PipeWire microphone, applies local noise reduction,
  and can publish the processed signal as a virtual microphone source.

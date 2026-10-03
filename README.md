@@ -4,7 +4,7 @@
 
 ClearMic is an open-source, cross-platform desktop application designed to improve microphone voice quality in real time.
 
-> **Development status:** the C++20 device model, Windows WASAPI and Linux PipeWire input backends, shared stateful DSP chain, and CI builds for Windows and Ubuntu 24.04 are in place. Both platforms provide CLI `record-test` A/B capture. Linux also provides `serve`, which continuously captures from a PipeWire microphone, processes audio, and publishes a `ClearMic Virtual Microphone` source; stop it with Ctrl+C. An early Ubuntu `.deb` build is available for the command-line tools. The service is not yet packaged as a desktop application, and Windows continuous routing, graphical controls, battery telemetry, persistent settings, and installers remain unimplemented. This is an early development project, not a finished product.
+> **Development status:** the C++20 device model, Windows WASAPI and Linux PipeWire input backends, shared stateful DSP chain, and CI builds for Windows and Ubuntu 24.04 are in place. Both platforms provide CLI `record-test` A/B capture. Linux has a GTK desktop panel to discover/select a PipeWire microphone, save that selection, and start/stop the processed `ClearMic Virtual Microphone` service. The panel is an early control surface: level meters, in-app A/B playback, processing controls, and device hotplug updates remain in progress. The Ubuntu `.deb` includes the GUI. Windows continuous routing, graphical controls, battery telemetry, persistent settings, and an installer remain unimplemented. This is an early development project, not a finished product.
 
 It aims to reduce background noise, echo, room reverberation, and inconsistent microphone levels while preserving a natural-sounding voice.
 
@@ -350,7 +350,7 @@ Install the current build dependencies with:
 
 ```bash
 sudo apt update
-sudo apt install build-essential cmake pkg-config libpipewire-0.3-dev
+sudo apt install build-essential cmake pkg-config libpipewire-0.3-dev libgtk-3-dev
 ```
 
 The intended development workflow is:
@@ -447,7 +447,7 @@ Install with:
 sudo apt install ./clearmic_<version>_amd64.deb
 ```
 
-Build the current command-line `.deb` from an Ubuntu 24.04 environment using `packaging/linux/build-deb.sh`. The package includes `clearmic-cli`, a man page, and a terminal launcher for device discovery. Start real-time routing with `clearmic-cli serve`; select **ClearMic Virtual Microphone** in another application and stop the service with Ctrl+C. A graphical control panel and automatic service lifecycle are not included yet.
+Build the Ubuntu `.deb` from an Ubuntu 24.04 environment using `packaging/linux/build-deb.sh`. The package includes `clearmic-cli`, the GTK control panel, a man page, and a desktop launcher. The GUI can start/stop real-time routing and select the **ClearMic Virtual Microphone** in other apps. Install `libgtk-3-dev` to build from source; end users receive GTK runtime dependencies through the package.
 
 ---
 
@@ -462,6 +462,7 @@ Build the current command-line `.deb` from an Ubuntu 24.04 environment using `pa
 - [x] Windows / WASAPI device discovery
 - [x] CLI device enumeration
 - [x] Ubuntu command-line `.deb` packaging
+- [x] Initial GTK Linux desktop window with microphone selection and service start/stop
 
 ### Phase 2 — Recording
 

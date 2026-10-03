@@ -26,6 +26,7 @@ void print_usage() {
 #endif
 #ifdef __linux__
                  "  clearmic-cli serve [device-id]\n"
+                 "  clearmic-cli gui\n"
 #endif
                  ;
 }
@@ -33,6 +34,8 @@ void print_usage() {
 
 int main(const int argc, char** argv) {
 #ifdef __linux__
+    if (argc == 2 && std::string_view(argv[1]) == "gui")
+        return clearmic::platform::pipewire::run_desktop_application(argv[0]);
     if ((argc == 2 || argc == 3) && std::string_view(argv[1]) == "serve") {
         try {
             clearmic::platform::pipewire::run_realtime_microphone(argc == 3 ? argv[2] : "");

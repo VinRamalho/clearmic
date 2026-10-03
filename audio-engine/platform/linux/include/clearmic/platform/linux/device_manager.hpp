@@ -15,4 +15,5 @@ public:
 [[nodiscard]] audio::AudioComparison capture_processed_audio(const std::string& device_id,
                                                              std::uint32_t duration_seconds);
 void run_realtime_microphone(const std::string& device_id);
+int run_desktop_application(const char* executable_path);
 }
