@@ -9,12 +9,14 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace clearmic::platform::windows {
 class DeviceManager final : public audio::IAudioDeviceManager {
 public:
     [[nodiscard]] std::vector<audio::AudioDevice> input_devices() override;
     [[nodiscard]] std::vector<audio::AudioDevice> output_devices();
+    [[nodiscard]] std::optional<float> input_peak_level(std::string_view device_id);
 };
 
 struct CaptureDiagnostics {

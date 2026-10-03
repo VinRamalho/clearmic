@@ -50,6 +50,7 @@ constexpr int enhancement_check = 119;
 constexpr int render_output_combo = 120;
 constexpr int live_route_button = 121;
 constexpr int virtual_cable_help_button = 122;
+constexpr int input_meter_caption = 123;
 constexpr UINT live_route_complete_message = WM_APP + 2;
 constexpr UINT live_route_started_message = WM_APP + 3;
 constexpr UINT tray_callback_message = WM_APP + 4;
@@ -91,6 +92,7 @@ struct Application {
     HWND enhancement_status{};
     HWND gain_value{};
     HWND device_id{};
+    HWND input_level_caption{};
     HWND enhancement{};
     HWND render_output{};
     HWND live_route{};
@@ -367,6 +369,24 @@ void update_live_diagnostics(Application& app) {
         ? std::to_wstring(app.live_metrics.max_processing_packet_ms.load(std::memory_order_relaxed)) + L" ms"
         : L"measuring";
     SetWindowTextW(app.device_id, diagnostic.c_str());
+}
+
+void update_idle_input_meter(Application& app) {
+    const int index = selected_device_index(app);
+    std::optional<float> peak;
+    try {
+        if (index >= 0) peak = DeviceManager{}.input_peak_level(app.devices[static_cast<std::size_t>(index)].id);
+    } catch (...) {
+        peak.reset();
+    }
+    if (!peak) {
+        SetWindowTextW(app.input_level_caption, L"Input level unavailable");
+        SendMessageW(app.input_level, PBM_SETPOS, 0, 0);
+        return;
+    }
+    SetWindowTextW(app.input_level_caption, L"Input level");
+    SendMessageW(app.input_level, PBM_SETPOS,
+                 static_cast<WPARAM>(std::clamp(*peak * 100.0F, 0.0F, 100.0F)), 0);
 }
 
 void update_controls(Application& app) {
@@ -723,9 +743,10 @@ void initialize_controls(Application& app) {
     SendMessageW(app.input_gain, TBM_SETTICFREQ, 3, 0);
     SendMessageW(app.input_gain, TBM_SETPOS, TRUE, 0);
 
-    add_label(app, L"Input level", 24, 520, 130);
+    add_label(app, L"Input level", 24, 520, 130, 22, input_meter_caption);
     add_control(app, PROGRESS_CLASSW, L"", PBS_SMOOTH, 160, 520, 544, 20, input_meter);
     app.input_level = GetDlgItem(app.window, input_meter);
+    app.input_level_caption = GetDlgItem(app.window, input_meter_caption);
     add_label(app, L"Processed output", 24, 548, 130);
     add_control(app, PROGRESS_CLASSW, L"", PBS_SMOOTH, 160, 548, 544, 20, output_meter);
     app.output_level = GetDlgItem(app.window, output_meter);
@@ -774,14 +795,16 @@ LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPAR
         return 0;
     case WM_TIMER:
         if (wparam == 1) refresh_devices(*app);
-        else if (wparam == 2 && app->live_routing) {
-            const auto input = app->live_metrics.input_rms.load(std::memory_order_relaxed);
-            const auto output = app->live_metrics.output_rms.load(std::memory_order_relaxed);
-            SendMessageW(app->input_level, PBM_SETPOS,
-                         static_cast<WPARAM>(std::clamp(input * 100.0F, 0.0F, 100.0F)), 0);
-            SendMessageW(app->output_level, PBM_SETPOS,
-                         static_cast<WPARAM>(std::clamp(output * 100.0F, 0.0F, 100.0F)), 0);
-            update_live_diagnostics(*app);
+        else if (wparam == 2) {
+            if (app->live_routing) {
+                const auto input = app->live_metrics.input_rms.load(std::memory_order_relaxed);
+                const auto output = app->live_metrics.output_rms.load(std::memory_order_relaxed);
+                SendMessageW(app->input_level, PBM_SETPOS,
+                             static_cast<WPARAM>(std::clamp(input * 100.0F, 0.0F, 100.0F)), 0);
+                SendMessageW(app->output_level, PBM_SETPOS,
+                             static_cast<WPARAM>(std::clamp(output * 100.0F, 0.0F, 100.0F)), 0);
+                update_live_diagnostics(*app);
+            } else update_idle_input_meter(*app);
         } else if (wparam == device_refresh_timer) {
             KillTimer(window, device_refresh_timer);
             refresh_devices(*app);

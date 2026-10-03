@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <audioclient.h>
 #include <cfgmgr32.h>
+#include <endpointvolume.h>
 #include <mmdeviceapi.h>
 #include <propvarutil.h>
 #include <setupapi.h>
@@ -10,15 +11,31 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cmath>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
 
+#ifndef __IAudioMeterInformation_INTERFACE_DEFINED__
+#define __IAudioMeterInformation_INTERFACE_DEFINED__
+MIDL_INTERFACE("C02216F6-8C67-4B5B-9D00-D008E73E0064")
+IAudioMeterInformation : public IUnknown {
+    virtual HRESULT STDMETHODCALLTYPE GetPeakValue(float* peak) = 0;
+    virtual HRESULT STDMETHODCALLTYPE GetMeteringChannelCount(UINT* channels) = 0;
+    virtual HRESULT STDMETHODCALLTYPE GetChannelsPeakValues(UINT channels, float* peaks) = 0;
+    virtual HRESULT STDMETHODCALLTYPE QueryHardwareSupport(DWORD* support) = 0;
+};
+#endif
+
 namespace clearmic::platform::windows {
 namespace {
+constexpr IID audio_meter_information_iid{
+    0xc02216f6, 0x8c67, 0x4b5b, {0x9d, 0x00, 0xd0, 0x08, 0xe7, 0x3e, 0x00, 0x64}};
 constexpr PROPERTYKEY device_friendly_name_key{
     {0xa45c254e, 0xdf1c, 0x4efd, {0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0}}, 14};
 template <typename T> struct ComRelease { void operator()(T* value) const noexcept { if (value) value->Release(); } };
@@ -35,6 +52,17 @@ std::string to_utf8(const wchar_t* value) {
     std::string output(static_cast<std::size_t>(size), '\0');
     WideCharToMultiByte(CP_UTF8, 0, value, -1, output.data(), size, nullptr, nullptr);
     output.pop_back();
+    return output;
+}
+
+std::wstring to_wide(const std::string_view value) {
+    if (value.empty()) return {};
+    const int size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
+                                         static_cast<int>(value.size()), nullptr, 0);
+    if (size <= 0) return {};
+    std::wstring output(static_cast<std::size_t>(size), L'\0');
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
+                            static_cast<int>(value.size()), output.data(), size) != size) return {};
     return output;
 }
 
@@ -230,5 +258,30 @@ std::vector<audio::AudioDevice> DeviceManager::output_devices() {
         result.push_back(std::move(info));
     }
     return result;
+}
+
+std::optional<float> DeviceManager::input_peak_level(const std::string_view device_id) {
+    if (device_id.empty()) return std::nullopt;
+    const HRESULT initialized = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    if (FAILED(initialized) && initialized != RPC_E_CHANGED_MODE) return std::nullopt;
+    struct ApartmentGuard { bool active; ~ApartmentGuard() { if (active) ::CoUninitialize(); } } apartment{SUCCEEDED(initialized)};
+
+    IMMDeviceEnumerator* raw_enumerator = nullptr;
+    if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+                                __uuidof(IMMDeviceEnumerator), reinterpret_cast<void**>(&raw_enumerator))))
+        return std::nullopt;
+    ComPtr<IMMDeviceEnumerator> enumerator(raw_enumerator);
+    const auto wide_id = to_wide(device_id);
+    if (wide_id.empty()) return std::nullopt;
+    IMMDevice* raw_device = nullptr;
+    if (FAILED(enumerator->GetDevice(wide_id.c_str(), &raw_device))) return std::nullopt;
+    ComPtr<IMMDevice> device(raw_device);
+    IAudioMeterInformation* raw_meter = nullptr;
+    if (FAILED(device->Activate(audio_meter_information_iid, CLSCTX_ALL, nullptr,
+                                reinterpret_cast<void**>(&raw_meter)))) return std::nullopt;
+    ComPtr<IAudioMeterInformation> meter(raw_meter);
+    float peak = 0.0F;
+    if (FAILED(meter->GetPeakValue(&peak)) || !std::isfinite(peak)) return std::nullopt;
+    return std::clamp(peak, 0.0F, 1.0F);
 }
 }
