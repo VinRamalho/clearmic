@@ -311,11 +311,15 @@ void on_preset_changed(GtkComboBox* combo, gpointer data) {
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(app.noise_gate), settings.noise_gate_enabled);
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(app.automatic_gain), settings.automatic_gain_enabled);
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(app.compressor), settings.compressor_enabled);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(app.enhancement), settings.enhancement_enabled);
+    gtk_range_set_value(GTK_RANGE(app.input_gain), settings.input_gain_db);
     app.updating_preferences = false;
     save_processing_toggle("noise-suppression", settings.noise_suppression_enabled);
     save_processing_toggle("noise-gate", settings.noise_gate_enabled);
     save_processing_toggle("automatic-gain", settings.automatic_gain_enabled);
     save_processing_toggle("compressor", settings.compressor_enabled);
+    save_processing_toggle("enhancement-enabled", settings.enhancement_enabled);
+    save_input_gain(settings.input_gain_db);
 }
 
 void on_processing_toggle(GtkToggleButton* button, gpointer user_data) {

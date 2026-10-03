@@ -629,6 +629,9 @@ void set_profile_controls(Application& app, const int index) {
     SendMessageW(app.automatic_gain, BM_SETCHECK, settings.automatic_gain_enabled ? BST_CHECKED : BST_UNCHECKED, 0);
     SendMessageW(app.compressor, BM_SETCHECK, settings.compressor_enabled ? BST_CHECKED : BST_UNCHECKED, 0);
     SendMessageW(app.enhancement, BM_SETCHECK, settings.enhancement_enabled ? BST_CHECKED : BST_UNCHECKED, 0);
+    const auto gain = static_cast<int>(settings.input_gain_db);
+    SendMessageW(app.input_gain, TBM_SETPOS, TRUE, gain);
+    SetWindowTextW(app.gain_value, (std::to_wstring(gain) + L" dB").c_str());
 }
 
 void load_settings(Application& app) {
