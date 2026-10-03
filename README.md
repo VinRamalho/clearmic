@@ -339,7 +339,7 @@ Install the current build dependencies with:
 
 ```bash
 sudo apt update
-sudo apt install build-essential cmake pkg-config libpipewire-0.3-dev libgtk-3-dev
+sudo apt install build-essential cmake pkg-config libpipewire-0.3-dev libgtk-3-dev libgstreamer1.0-dev
 ```
 
 The intended development workflow is:
@@ -434,7 +434,7 @@ Install with:
 sudo apt install ./clearmic_<version>_amd64.deb
 ```
 
-Build the Ubuntu `.deb` from an Ubuntu 24.04 environment using `packaging/linux/build-deb.sh`. The package includes `clearmic-cli`, the GTK control panel, a man page, and a desktop launcher. The GUI can start/stop real-time routing and select the **ClearMic Virtual Microphone** in other apps. Install `libpipewire-0.3-dev`, `libgtk-3-dev`, and `libgstreamer1.0-dev` to build from source; end users receive GTK and GStreamer runtime dependencies through the package.
+Build the Ubuntu `.deb` from an Ubuntu 24.04 environment using `packaging/linux/build-deb.sh`. The package includes `clearmic-cli`, the GTK control panel, a man page, and a desktop launcher. The GUI can start/stop real-time routing and select the **ClearMic Virtual Microphone** in other apps. Install the development packages listed in the Ubuntu build instructions above; those include PipeWire, GTK 3, GStreamer 1.0, CMake, pkg-config, and a C++20 toolchain. End users receive GTK and GStreamer runtime dependencies through the `.deb`.
 
 ---
 
