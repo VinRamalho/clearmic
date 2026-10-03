@@ -210,6 +210,10 @@ int main(const int argc, char** argv) {
                       << "\n    Selectable: " << (device.selectable ? "yes" : "no") << "\n";
             if (device.sample_rate_hz) std::cout << "    Sample rate: " << *device.sample_rate_hz << " Hz\n";
             if (device.channels) std::cout << "    Channels: " << *device.channels << "\n";
+            if (device.usb_vendor_id && device.usb_product_id)
+                std::cout << "    USB VID:PID: " << std::hex << std::uppercase << std::setfill('0')
+                          << std::setw(4) << *device.usb_vendor_id << ':' << std::setw(4) << *device.usb_product_id
+                          << std::dec << std::nouppercase << std::setfill(' ') << "\n";
         }
     } catch (const std::exception& error) {
         std::cerr << "Could not enumerate input devices: " << error.what() << "\n";

@@ -156,6 +156,45 @@ std::vector<GUID> endpoint_container_ids(const std::wstring& endpoint_id) {
     return containers;
 }
 
+std::optional<std::pair<std::uint16_t, std::uint16_t>> endpoint_usb_ids(const std::wstring& endpoint_id) {
+    if (endpoint_id.empty()) return std::nullopt;
+    std::wstring endpoint_instance = L"SWD\\MMDEVAPI\\";
+    endpoint_instance += endpoint_id;
+    DEVINST node{};
+    if (CM_Locate_DevNodeW(&node, endpoint_instance.data(), CM_LOCATE_DEVNODE_NORMAL) != CR_SUCCESS)
+        return std::nullopt;
+
+    for (unsigned int depth = 0; depth < 16; ++depth) {
+        std::array<wchar_t, 512> instance_id{};
+        if (CM_Get_Device_IDW(node, instance_id.data(), static_cast<ULONG>(instance_id.size()), 0) == CR_SUCCESS) {
+            const std::wstring_view value(instance_id.data());
+            if (value.starts_with(L"USB\\")) {
+                const auto vendor_position = value.find(L"VID_");
+                const auto product_position = value.find(L"&PID_");
+                if (vendor_position != std::wstring_view::npos && product_position != std::wstring_view::npos &&
+                    value.size() >= vendor_position + 8 && value.size() >= product_position + 9) {
+                    auto parse_component = [&](const std::size_t position) -> std::optional<std::uint16_t> {
+                        std::string hexadecimal;
+                        hexadecimal.reserve(4);
+                        for (std::size_t index = position; index < position + 4; ++index) {
+                            if (value[index] > 0x7f) return std::nullopt;
+                            hexadecimal.push_back(static_cast<char>(value[index]));
+                        }
+                        return audio::parse_device_identifier("0x" + hexadecimal);
+                    };
+                    auto vendor = parse_component(vendor_position + 4);
+                    auto product = parse_component(product_position + 5);
+                    if (vendor && product) return std::pair{*vendor, *product};
+                }
+            }
+        }
+        DEVINST parent{};
+        if (CM_Get_Parent(&parent, node, 0) != CR_SUCCESS) break;
+        node = parent;
+    }
+    return std::nullopt;
+}
+
 std::optional<audio::BatteryInfo> query_battery_interface(const wchar_t* path) {
     HANDLE battery = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
                                  nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -275,6 +314,10 @@ std::vector<audio::AudioDevice> DeviceManager::input_devices() {
         info.id = to_utf8(id);
         info.is_default = id_value == default_id_value;
         try { info.capabilities.battery = endpoint_battery(id_value); } catch (...) {}
+        if (const auto usb_ids = endpoint_usb_ids(id_value)) {
+            info.usb_vendor_id = usb_ids->first;
+            info.usb_product_id = usb_ids->second;
+        }
         CoTaskMemFree(id);
 
         DWORD state = 0;

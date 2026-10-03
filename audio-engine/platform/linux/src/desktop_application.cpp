@@ -8,7 +8,9 @@
 #include <algorithm>
 #include <cstdio>
 #include <iterator>
+#include <iomanip>
 #include <signal.h>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -227,6 +229,12 @@ void update_device_status(Application& app) {
     if (selected.bluetooth_codec) status += " · Codec " + *selected.bluetooth_codec;
     if (selected.sample_rate_hz) status += " · " + std::to_string(*selected.sample_rate_hz) + " Hz";
     if (selected.channels) status += " · " + std::to_string(*selected.channels) + " ch";
+    if (selected.usb_vendor_id && selected.usb_product_id) {
+        std::ostringstream usb_ids;
+        usb_ids << " · USB VID:PID " << std::uppercase << std::hex << std::setfill('0')
+                << std::setw(4) << *selected.usb_vendor_id << ':' << std::setw(4) << *selected.usb_product_id;
+        status += usb_ids.str();
+    }
     if (selected.capabilities.battery && selected.capabilities.battery->percentage)
         status += " · Battery " + std::to_string(*selected.capabilities.battery->percentage) + "%";
     else if (selected.bluetooth_address)

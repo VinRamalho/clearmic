@@ -6,6 +6,7 @@
 #include <spa/utils/json.h>
 
 #include <array>
+#include <optional>
 #include <stdexcept>
 #include <string_view>
 #include <unordered_map>
@@ -23,6 +24,8 @@ struct Enumeration {
     spa_hook metadata_listener{};
     std::vector<audio::AudioDevice> devices;
     std::unordered_map<std::string, std::string> node_names;
+    std::unordered_map<std::string, std::string> node_device_ids;
+    std::unordered_map<std::string, std::pair<std::optional<std::uint16_t>, std::optional<std::uint16_t>>> device_usb_ids;
     std::string default_source_name;
     int sync_sequence{};
     bool synchronized{false};
@@ -54,6 +57,16 @@ const pw_metadata_events metadata_events{.version = PW_VERSION_METADATA_EVENTS, 
 void on_global(void* data, const std::uint32_t global_id, const std::uint32_t, const char* type,
                const std::uint32_t, const spa_dict* properties) {
     auto& state = *static_cast<Enumeration*>(data);
+    if (std::string_view(type) == PW_TYPE_INTERFACE_Device && properties) {
+        std::optional<std::uint16_t> vendor_id;
+        std::optional<std::uint16_t> product_id;
+        if (const char* value = spa_dict_lookup(properties, PW_KEY_DEVICE_VENDOR_ID))
+            vendor_id = audio::parse_device_identifier(value);
+        if (const char* value = spa_dict_lookup(properties, PW_KEY_DEVICE_PRODUCT_ID))
+            product_id = audio::parse_device_identifier(value);
+        state.device_usb_ids[std::to_string(global_id)] = {vendor_id, product_id};
+        return;
+    }
     if (std::string_view(type) == PW_TYPE_INTERFACE_Metadata && properties) {
         const char* metadata_name = spa_dict_lookup(properties, PW_KEY_METADATA_NAME);
         if (metadata_name && std::string_view(metadata_name) == "default") {
@@ -75,7 +88,13 @@ void on_global(void* data, const std::uint32_t global_id, const std::uint32_t, c
     device.name = name ? name : "Unnamed PipeWire source";
     const char* node_name = spa_dict_lookup(properties, PW_KEY_NODE_NAME);
     if (node_name) state.node_names[node_name] = device.id;
+    if (const char* parent_device_id = spa_dict_lookup(properties, PW_KEY_DEVICE_ID))
+        state.node_device_ids[device.id] = parent_device_id;
     device.connection = audio::ConnectionState::connected;
+    if (const char* vendor_id = spa_dict_lookup(properties, PW_KEY_DEVICE_VENDOR_ID))
+        device.usb_vendor_id = audio::parse_device_identifier(vendor_id);
+    if (const char* product_id = spa_dict_lookup(properties, PW_KEY_DEVICE_PRODUCT_ID))
+        device.usb_product_id = audio::parse_device_identifier(product_id);
     const char* bluetooth_address = spa_dict_lookup(properties, "api.bluez5.address");
     if (!bluetooth_address) bluetooth_address = spa_dict_lookup(properties, "bluez5.address");
     if (bluetooth_address && *bluetooth_address) device.bluetooth_address = bluetooth_address;
@@ -135,6 +154,14 @@ std::vector<audio::AudioDevice> DeviceManager::input_devices() {
     const auto default_device = state.node_names.find(state.default_source_name);
     if (default_device != state.node_names.end()) {
         for (auto& device : state.devices) device.is_default = device.id == default_device->second;
+    }
+    for (auto& device : state.devices) {
+        const auto parent_id = state.node_device_ids.find(device.id);
+        if (parent_id == state.node_device_ids.end()) continue;
+        const auto ids = state.device_usb_ids.find(parent_id->second);
+        if (ids == state.device_usb_ids.end()) continue;
+        if (!device.usb_vendor_id) device.usb_vendor_id = ids->second.first;
+        if (!device.usb_product_id) device.usb_product_id = ids->second.second;
     }
     if (state.metadata) {
         spa_hook_remove(&state.metadata_listener);

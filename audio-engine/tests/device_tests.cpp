@@ -19,8 +19,12 @@ int main() {
         battery_percentage_from_capacity(10, 0) ||
         battery_percentage_from_capacity(0xffffffffU, 100) ||
         battery_percentage_from_capacity(10, 0xffffffffU)) return 15;
+    if (parse_device_identifier("0x046d") != 0x046d || parse_device_identifier("65535") != 65535 ||
+        parse_device_identifier("0x10000") || parse_device_identifier("-1") ||
+        parse_device_identifier("0x12xz") || parse_device_identifier("")) return 16;
     AudioDevice device;
     if (device.device_kind != "microphone" || !device.selectable) return 8;
+    if (device.usb_vendor_id || device.usb_product_id) return 17;
     AudioDevice headset_function;
     headset_function.device_kind = "bluetooth-headset-function";
     headset_function.selectable = false;

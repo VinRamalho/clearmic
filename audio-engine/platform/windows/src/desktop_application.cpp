@@ -17,7 +17,9 @@
 #include <cwctype>
 #include <cwchar>
 #include <filesystem>
+#include <iomanip>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <system_error>
 #include <thread>
@@ -340,6 +342,12 @@ void update_device_status(Application& app) {
     diagnostic += device.sample_rate_hz ? std::to_wstring(*device.sample_rate_hz) + L" Hz" : L"unavailable";
     diagnostic += L" / ";
     diagnostic += device.channels ? std::to_wstring(*device.channels) + L" channels" : L"channel count unavailable";
+    if (device.usb_vendor_id && device.usb_product_id) {
+        std::wostringstream usb_ids;
+        usb_ids << L" · USB VID:PID " << std::uppercase << std::hex << std::setfill(L'0')
+                << std::setw(4) << *device.usb_vendor_id << L':' << std::setw(4) << *device.usb_product_id;
+        diagnostic += usb_ids.str();
+    }
     diagnostic += L" · Buffer/latency: not measured";
     SetWindowTextW(app.device_id, diagnostic.c_str());
 }
