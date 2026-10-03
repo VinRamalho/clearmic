@@ -17,6 +17,7 @@
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -160,15 +161,13 @@ void capture_process(void* data) {
     if (!buffer) return;
     auto* b = buffer->buffer;
     pw_time time{};
-    if (pw_stream_get_time_n(session.capture, &time, sizeof(time)) >= 0) {
-        const auto latency = stream_latency_ms(time.delay, time.queued, time.buffered,
+    std::optional<StreamLatency> latency;
+    if (pw_stream_get_time_n(session.capture, &time, sizeof(time)) >= 0)
+        latency = stream_latency_ms(time.delay, time.queued, time.buffered,
             time.rate.num, time.rate.denom, 48000);
-        if (latency) {
-            session.capture_graph_latency_ms.store(latency->graph_ms, std::memory_order_relaxed);
-            session.capture_queue_latency_ms.store(latency->queued_ms, std::memory_order_relaxed);
-            session.capture_resampler_latency_ms.store(latency->buffered_ms, std::memory_order_relaxed);
-        }
-    }
+    session.capture_graph_latency_ms.store(latency ? latency->graph_ms : -1.0F, std::memory_order_relaxed);
+    session.capture_queue_latency_ms.store(latency ? latency->queued_ms : -1.0F, std::memory_order_relaxed);
+    session.capture_resampler_latency_ms.store(latency ? latency->buffered_ms : -1.0F, std::memory_order_relaxed);
     if (!b || b->n_datas == 0 || !b->datas[0].data || !b->datas[0].chunk ||
         b->datas[0].chunk->stride != static_cast<int>(sizeof(std::int16_t))) {
         const bool failed = set_stream_error(session, StreamError::unsupported_capture_buffer);
@@ -236,15 +235,13 @@ void source_process(void* data) {
     if (!buffer) return;
     auto* b = buffer->buffer;
     pw_time time{};
-    if (pw_stream_get_time_n(session.source, &time, sizeof(time)) >= 0) {
-        const auto latency = stream_latency_ms(time.delay, time.queued, time.buffered,
+    std::optional<StreamLatency> latency;
+    if (pw_stream_get_time_n(session.source, &time, sizeof(time)) >= 0)
+        latency = stream_latency_ms(time.delay, time.queued, time.buffered,
             time.rate.num, time.rate.denom, 48000);
-        if (latency) {
-            session.source_graph_latency_ms.store(latency->graph_ms, std::memory_order_relaxed);
-            session.source_queue_latency_ms.store(latency->queued_ms, std::memory_order_relaxed);
-            session.source_resampler_latency_ms.store(latency->buffered_ms, std::memory_order_relaxed);
-        }
-    }
+    session.source_graph_latency_ms.store(latency ? latency->graph_ms : -1.0F, std::memory_order_relaxed);
+    session.source_queue_latency_ms.store(latency ? latency->queued_ms : -1.0F, std::memory_order_relaxed);
+    session.source_resampler_latency_ms.store(latency ? latency->buffered_ms : -1.0F, std::memory_order_relaxed);
     if (!b || b->n_datas == 0 || !b->datas[0].data || !b->datas[0].chunk) {
         const bool failed = set_stream_error(session, StreamError::unsupported_source_buffer);
         pw_stream_queue_buffer(session.source, buffer);
