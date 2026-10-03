@@ -243,6 +243,18 @@ int selected_render_device_index(const Application& app) {
     return index >= 0 && static_cast<std::size_t>(index) < app.render_devices.size() ? static_cast<int>(index) : -1;
 }
 
+bool is_virtual_cable_output(const audio::AudioDevice& device) {
+    std::wstring name = to_wide(device.name);
+    std::transform(name.begin(), name.end(), name.begin(), [](wchar_t value) {
+        return static_cast<wchar_t>(std::towlower(value));
+    });
+    return name.find(L"cable input") != std::wstring::npos ||
+           name.find(L"vb-audio") != std::wstring::npos ||
+           name.find(L"voicemeeter") != std::wstring::npos ||
+           name.find(L"virtual cable") != std::wstring::npos ||
+           name.find(L"virtual audio") != std::wstring::npos;
+}
+
 void update_device_status(Application& app) {
     const int index = selected_device_index(app);
     if (index < 0) {
@@ -376,13 +388,15 @@ void refresh_devices(Application& app) {
     int preferred_render_row = -1;
     for (std::size_t index = 0; index < app.render_devices.size(); ++index) {
         const auto& device = app.render_devices[index];
+        const bool virtual_cable = is_virtual_cable_output(device);
         std::wstring label = to_wide(device.name);
+        if (!virtual_cable) label += L" (not a virtual cable)";
         if (device.is_default) label += L" (default playback)";
         const LRESULT added = SendMessageW(app.render_output, CB_ADDSTRING, 0,
                                             reinterpret_cast<LPARAM>(label.c_str()));
         if (added == CB_ERR || added == CB_ERRSPACE) continue;
         SendMessageW(app.render_output, CB_SETITEMDATA, static_cast<WPARAM>(added), static_cast<LPARAM>(index));
-        if (to_wide(device.id) == preferred_render) preferred_render_row = static_cast<int>(added);
+        if (virtual_cable && to_wide(device.id) == preferred_render) preferred_render_row = static_cast<int>(added);
     }
     SendMessageW(app.render_output, CB_SETCURSEL,
                  static_cast<WPARAM>(preferred_render_row >= 0 ? preferred_render_row : 0), 0);
@@ -505,6 +519,11 @@ void toggle_live_route(Application& app) {
     const auto input_id = app.devices[static_cast<std::size_t>(input_index)].id;
     const auto output_id = app.render_devices[static_cast<std::size_t>(output_index)].id;
     const auto output_name = to_wide(app.render_devices[static_cast<std::size_t>(output_index)].name);
+    if (!is_virtual_cable_output(app.render_devices[static_cast<std::size_t>(output_index)])) {
+        SetWindowTextW(app.status,
+            L"Choose a virtual-cable playback endpoint to avoid sending processed microphone audio to speakers.");
+        return;
+    }
     const auto settings = current_settings(app);
     app.stop_live_route.store(false, std::memory_order_relaxed);
     app.live_metrics.input_rms.store(0.0F, std::memory_order_relaxed);
