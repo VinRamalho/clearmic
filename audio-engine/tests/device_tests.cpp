@@ -23,9 +23,15 @@ int main() {
     if (device.capabilities.battery != std::nullopt) return 2;
     if (device.capabilities.transmitter_battery != std::nullopt) return 3;
     if (device.capabilities.receiver_battery != std::nullopt) return 4;
-    BatteryInfo empty_battery;
-    empty_battery.percentage = 0;
-    if (!is_valid_battery_percentage(*empty_battery.percentage)) return 5;
+    const BatteryInfo unavailable_battery;
+    if (unavailable_battery.percentage.has_value() ||
+        unavailable_battery.charging != ChargingState::unknown) return 10;
+    const BatteryInfo reported_zero_battery{0, ChargingState::not_charging};
+    if (!reported_zero_battery.percentage.has_value() || *reported_zero_battery.percentage != 0 ||
+        !is_valid_battery_percentage(*reported_zero_battery.percentage) ||
+        reported_zero_battery.charging != ChargingState::not_charging) return 11;
+    device.capabilities.battery = reported_zero_battery;
+    if (!device.capabilities.battery || *device.capabilities.battery->percentage != 0) return 12;
     if (is_valid_battery_percentage(101)) return 6;
     try {
         run_wav_tests();
