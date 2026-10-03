@@ -24,6 +24,19 @@ namespace {
 constexpr std::size_t ring_capacity = 1U << 15U;
 static_assert((ring_capacity & (ring_capacity - 1U)) == 0);
 
+enum class StreamError : std::uint8_t {
+    none,
+    writing_detail,
+    stream_failure,
+    disconnected,
+    unsupported_capture_buffer,
+    invalid_capture_range,
+    unaligned_capture_chunk,
+    oversized_capture_buffer,
+    unsupported_source_buffer,
+    oversized_source_buffer,
+};
+
 // Single producer (capture callback), single consumer (virtual source callback).
 struct AudioRing {
     std::array<std::int16_t, ring_capacity> samples{};
@@ -75,8 +88,40 @@ struct Session {
     pw_stream* source{};
     spa_hook capture_listener{};
     spa_hook source_listener{};
-    std::string error;
+    std::atomic<StreamError> error{StreamError::none};
+    std::array<char, 256> error_detail{};
 };
+
+const char* default_error_detail(const StreamError error) noexcept {
+    switch (error) {
+    case StreamError::stream_failure: return "PipeWire audio stream failed";
+    case StreamError::disconnected: return "PipeWire audio stream disconnected";
+    case StreamError::unsupported_capture_buffer: return "PipeWire capture returned an unsupported audio buffer";
+    case StreamError::invalid_capture_range: return "PipeWire capture buffer reported an invalid chunk range";
+    case StreamError::unaligned_capture_chunk: return "PipeWire capture chunk is not aligned to PCM16 samples";
+    case StreamError::oversized_capture_buffer:
+    case StreamError::oversized_source_buffer: return "PipeWire callback exceeded the preallocated audio buffer";
+    case StreamError::unsupported_source_buffer:
+        return "PipeWire virtual microphone returned an unsupported audio buffer";
+    case StreamError::none:
+    case StreamError::writing_detail: return "PipeWire audio stream failed";
+    }
+    return "PipeWire audio stream failed";
+}
+
+void set_stream_error(Session& session, const StreamError error, const char* detail = nullptr) noexcept {
+    auto expected = StreamError::none;
+    if (!session.error.compare_exchange_strong(expected, StreamError::writing_detail,
+            std::memory_order_acq_rel, std::memory_order_relaxed)) return;
+    const char* text = detail && detail[0] ? detail : default_error_detail(error);
+    std::size_t length = 0;
+    while (text[length] != '\0' && length + 1 < session.error_detail.size()) {
+        session.error_detail[length] = text[length];
+        ++length;
+    }
+    session.error_detail[length] = '\0';
+    session.error.store(error, std::memory_order_release);
+}
 
 std::atomic<spa_source*> pending_signal_event{};
 std::atomic<pw_main_loop*> pending_signal_loop{};
@@ -115,12 +160,12 @@ void on_signal_event(void* data, std::uint64_t) {
     pw_main_loop_quit(static_cast<pw_main_loop*>(data));
 }
 
-void state_changed(void* data, pw_stream_state old_state, pw_stream_state state, const char* error) {
+void state_changed(void* data, pw_stream_state old_state, pw_stream_state state, const char* detail) {
     auto& session = *static_cast<Session*>(data);
-    if (state == PW_STREAM_STATE_ERROR) session.error = error ? error : "PipeWire stream failed";
+    if (state == PW_STREAM_STATE_ERROR) set_stream_error(session, StreamError::stream_failure, detail);
     else if (state == PW_STREAM_STATE_UNCONNECTED && old_state != PW_STREAM_STATE_UNCONNECTED)
-        session.error = "PipeWire audio stream disconnected";
-    if (!session.error.empty()) pw_main_loop_quit(session.loop);
+        set_stream_error(session, StreamError::disconnected);
+    if (session.error.load(std::memory_order_relaxed) != StreamError::none) pw_main_loop_quit(session.loop);
 }
 
 void capture_process(void* data) {
@@ -130,20 +175,20 @@ void capture_process(void* data) {
     auto* b = buffer->buffer;
     if (!b || b->n_datas == 0 || !b->datas[0].data || !b->datas[0].chunk ||
         b->datas[0].chunk->stride != static_cast<int>(sizeof(std::int16_t))) {
-        session.error = "PipeWire capture returned an unsupported audio buffer";
+        set_stream_error(session, StreamError::unsupported_capture_buffer);
         pw_stream_queue_buffer(session.capture, buffer);
         pw_main_loop_quit(session.loop);
         return;
     }
     auto& d = b->datas[0];
     if (d.chunk->offset > d.maxsize || d.chunk->size > d.maxsize - d.chunk->offset) {
-        session.error = "PipeWire capture buffer reported an invalid chunk range";
+        set_stream_error(session, StreamError::invalid_capture_range);
         pw_stream_queue_buffer(session.capture, buffer);
         pw_main_loop_quit(session.loop);
         return;
     }
     if ((d.chunk->size % sizeof(std::int16_t)) != 0) {
-        session.error = "PipeWire capture chunk is not aligned to PCM16 samples";
+        set_stream_error(session, StreamError::unaligned_capture_chunk);
         pw_stream_queue_buffer(session.capture, buffer);
         pw_main_loop_quit(session.loop);
         return;
@@ -152,7 +197,7 @@ void capture_process(void* data) {
     const auto* input = reinterpret_cast<const std::int16_t*>(static_cast<const std::byte*>(d.data) + d.chunk->offset);
     // PipeWire callback buffers are bounded; storage is preallocated before streaming.
     if (count > session.callback_output.size()) {
-        session.error = "PipeWire callback exceeded the preallocated audio buffer";
+        set_stream_error(session, StreamError::oversized_capture_buffer);
         pw_stream_queue_buffer(session.capture, buffer);
         pw_main_loop_quit(session.loop);
         return;
@@ -195,7 +240,7 @@ void source_process(void* data) {
     if (!buffer) return;
     auto* b = buffer->buffer;
     if (!b || b->n_datas == 0 || !b->datas[0].data || !b->datas[0].chunk) {
-        session.error = "PipeWire virtual microphone returned an unsupported audio buffer";
+        set_stream_error(session, StreamError::unsupported_source_buffer);
         pw_stream_queue_buffer(session.source, buffer);
         pw_main_loop_quit(session.loop);
         return;
@@ -203,7 +248,7 @@ void source_process(void* data) {
     auto& d = b->datas[0];
     const auto capacity = d.maxsize / sizeof(std::int16_t);
     if (capacity > session.source_silence.size()) {
-        session.error = "PipeWire source callback exceeded the preallocated audio buffer";
+        set_stream_error(session, StreamError::oversized_source_buffer);
         pw_stream_queue_buffer(session.source, buffer);
         pw_main_loop_quit(session.loop);
         return;
@@ -315,6 +360,8 @@ void run_realtime_microphone(const std::string& device_id, const audio::Processi
     diagnostics_timer = nullptr;
     std::signal(SIGINT, previous_int);
     std::signal(SIGTERM, previous_term);
-    if (!runtime.session.error.empty()) throw std::runtime_error(runtime.session.error);
+    const auto error = runtime.session.error.load(std::memory_order_acquire);
+    if (error != StreamError::none)
+        throw std::runtime_error(runtime.session.error_detail.data());
 }
 }
