@@ -131,6 +131,13 @@ for _ in $(seq 1 20); do
     sleep 0.1
 done
 if [[ "$linked" != true ]]; then
+    echo "PipeWire nodes and ports:" >&2
+    pw-cli ls Node >&2 || true
+    pw-cli ls Port >&2 || true
+    echo "PipeWire links:" >&2
+    pw-cli ls Link >&2 || true
+    echo "PipeWire and WirePlumber logs:" >&2
+    cat "$tmp/pipewire.log" "$tmp/wireplumber.log" >&2
     cat "$tmp/consumer.log" >&2
     echo "The PipeWire consumer did not link to ClearMic's virtual source" >&2
     exit 1
