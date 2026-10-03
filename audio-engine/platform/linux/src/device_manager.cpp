@@ -1,4 +1,5 @@
 #include "clearmic/platform/linux/device_manager.hpp"
+#include "bluez_battery.hpp"
 
 #include <pipewire/pipewire.h>
 
@@ -31,6 +32,9 @@ void on_global(void* data, const std::uint32_t global_id, const std::uint32_t, c
     device.id = serial ? serial : std::to_string(global_id);
     device.name = name ? name : "Unnamed PipeWire source";
     device.connection = audio::ConnectionState::connected;
+    const char* bluetooth_address = spa_dict_lookup(properties, "api.bluez5.address");
+    if (!bluetooth_address) bluetooth_address = spa_dict_lookup(properties, "bluez5.address");
+    if (bluetooth_address && *bluetooth_address) device.bluetooth_address = bluetooth_address;
     static_cast<Enumeration*>(data)->devices.push_back(std::move(device));
 }
 const pw_registry_events registry_events{.version = PW_VERSION_REGISTRY_EVENTS, .global = on_global};
@@ -74,6 +78,7 @@ std::vector<audio::AudioDevice> DeviceManager::input_devices() {
     spa_hook_remove(&core_listener);
     pw_proxy_destroy(reinterpret_cast<pw_proxy*>(state.registry));
     pw_core_disconnect(state.core); pw_context_destroy(state.context); pw_main_loop_destroy(state.loop);
+    populate_bluez_battery(state.devices);
     return state.devices;
 }
 }

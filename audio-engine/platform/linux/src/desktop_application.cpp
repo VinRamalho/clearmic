@@ -220,8 +220,13 @@ void update_device_status(Application& app) {
     const auto& selected = app.inputs[static_cast<std::size_t>(index)];
     const char* connection = selected.connection == audio::ConnectionState::connected ? "Connected" : "Status unknown";
     std::string status = std::string(connection) + " · " + selected.id;
+    if (selected.bluetooth_address) status += " · Bluetooth " + *selected.bluetooth_address;
     if (selected.sample_rate_hz) status += " · " + std::to_string(*selected.sample_rate_hz) + " Hz";
     if (selected.channels) status += " · " + std::to_string(*selected.channels) + " ch";
+    if (selected.capabilities.battery && selected.capabilities.battery->percentage)
+        status += " · Battery " + std::to_string(*selected.capabilities.battery->percentage) + "%";
+    else if (selected.bluetooth_address)
+        status += " · Battery not available";
     gtk_label_set_text(GTK_LABEL(app.device_status), status.c_str());
 }
 

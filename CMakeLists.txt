@@ -110,12 +110,14 @@ elseif(UNIX AND NOT APPLE)
     pkg_check_modules(PIPEWIRE REQUIRED IMPORTED_TARGET libpipewire-0.3)
     pkg_check_modules(GTK3 REQUIRED IMPORTED_TARGET gtk+-3.0)
     pkg_check_modules(GSTREAMER REQUIRED IMPORTED_TARGET gstreamer-1.0)
+    pkg_check_modules(GIO REQUIRED IMPORTED_TARGET gio-2.0)
     add_library(clearmic_platform audio-engine/platform/linux/src/device_manager.cpp
+        audio-engine/platform/linux/src/bluez_battery.cpp
         audio-engine/platform/linux/src/live_capture.cpp
         audio-engine/platform/linux/src/realtime_microphone.cpp
         audio-engine/platform/linux/src/desktop_application.cpp)
     target_include_directories(clearmic_platform PUBLIC audio-engine/platform/linux/include)
-    target_link_libraries(clearmic_platform PUBLIC clearmic_core PkgConfig::PIPEWIRE PkgConfig::GTK3 PkgConfig::GSTREAMER)
+    target_link_libraries(clearmic_platform PUBLIC clearmic_core PkgConfig::PIPEWIRE PkgConfig::GTK3 PkgConfig::GSTREAMER PkgConfig::GIO)
 else()
     message(FATAL_ERROR "ClearMic currently supports Windows and Linux.")
 endif()
