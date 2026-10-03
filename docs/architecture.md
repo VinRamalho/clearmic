@@ -2,14 +2,14 @@
 
 ClearMic uses a C++20 core shared by Windows and Linux. The common `AudioDevice` model keeps operating-system identifiers and optional capabilities separate from platform discovery. Missing device or battery telemetry is represented as unknown (`std::optional`), never as a fabricated value.
 
-`IAudioDeviceManager` is the platform boundary. Windows enumerates active capture endpoints through Core Audio/WASAPI. Linux enumerates PipeWire `Audio/Source` nodes. The initial CLI presents this data without a desktop shell, keeping the first runtime milestone useful while the audio engine and product UI are built later.
+`IAudioDeviceManager` is the platform boundary. Windows enumerates active capture endpoints through Core Audio/WASAPI. Linux enumerates PipeWire `Audio/Source` nodes. The CLI presents this data without a desktop shell. Linux also provides a persistent PipeWire command that connects an input stream, the shared DSP chain, and a virtual `Audio/Source` stream.
 
-The processing engine will consume and produce platform-independent PCM frames. Capture/output callbacks must not perform file I/O or blocking UI work. A real virtual microphone requires routing processed frames back into a platform audio source; it is separate from device discovery.
+The processing engine consumes and produces platform-independent PCM frames. Capture/output callbacks must not perform file I/O, logging, or blocking UI work. The Linux service uses a bounded single-producer/single-consumer PCM ring between PipeWire capture and virtual-source callbacks. Windows live routing and a desktop shell remain future work.
 
 ## Current scope
 
-- Implemented: shared device and optional battery capability model, native input-device enumeration backends, CLI, and core model test.
-- The CLI can apply Xiph RNNoise to explicit 48 kHz PCM16 WAV files. A shared stateful processing chain now handles arbitrary PCM16 callback sizes with preset-backed gate, gain, compression, and AGC controls. This DSP core is not yet connected to live microphone capture.
+- Implemented: shared device and optional battery capability model, native input-device enumeration backends, CLI, Linux continuous PipeWire-to-virtual-source routing, and core model test.
+- The CLI can apply Xiph RNNoise to explicit 48 kHz PCM16 WAV files. A shared stateful processing chain handles arbitrary PCM16 callback sizes with preset-backed gate, gain, compression, and AGC controls. The Linux PipeWire service uses the chain for continuous microphone enhancement.
 - Windows backend reads the default Windows audio mix format as device capability information. Battery and device-change monitoring are not implemented.
 - Linux backend requires PipeWire development headers (`libpipewire-0.3-dev`). Linux build/runtime validation requires a PipeWire system.
-- Linux PipeWire and Windows WASAPI have bounded `record-test` paths that capture a selected/default source and save original/processed WAVs after explicit user invocation. The sample is processed after capture, not continuously during microphone use. Virtual microphone, UI, persistent settings, and installers remain future work.
+- Linux PipeWire and Windows WASAPI have bounded `record-test` paths that capture a selected/default source and save original/processed WAVs after explicit user invocation. The sample is processed after capture. Windows continuous audio routing, graphical UI, persistent settings, battery telemetry, and installers remain future work.
