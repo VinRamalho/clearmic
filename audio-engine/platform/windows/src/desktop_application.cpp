@@ -1,4 +1,5 @@
 #include "clearmic/platform/windows/device_manager.hpp"
+#include "clearmic/platform/windows/virtual_cable.hpp"
 
 #include "clearmic/audio/processing.hpp"
 #include "clearmic/audio/wav.hpp"
@@ -255,49 +256,19 @@ int selected_render_device_index(const Application& app) {
 }
 
 bool is_virtual_cable_output(const audio::AudioDevice& device) {
-    std::wstring name = to_wide(device.name);
-    std::transform(name.begin(), name.end(), name.begin(), [](wchar_t value) {
-        return static_cast<wchar_t>(std::towlower(value));
-    });
-    return name.find(L"cable input") != std::wstring::npos ||
-           name.find(L"voicemeeter input") != std::wstring::npos ||
-           name.find(L"virtual cable input") != std::wstring::npos ||
-           name.find(L"virtual audio input") != std::wstring::npos;
+    return is_virtual_cable_output_name(to_wide(device.name));
 }
 
 bool is_virtual_cable_capture(const audio::AudioDevice& device) {
-    std::wstring name = to_wide(device.name);
-    std::transform(name.begin(), name.end(), name.begin(), [](wchar_t value) {
-        return static_cast<wchar_t>(std::towlower(value));
-    });
-    return name.find(L"cable output") != std::wstring::npos ||
-           name.find(L"voicemeeter output") != std::wstring::npos ||
-           name.find(L"virtual cable output") != std::wstring::npos ||
-           name.find(L"virtual audio output") != std::wstring::npos;
+    return is_virtual_cable_capture_name(to_wide(device.name));
 }
 
 bool has_paired_virtual_capture(const Application& app, const audio::AudioDevice& output) {
-    const auto normalized = [](std::wstring value) {
-        std::transform(value.begin(), value.end(), value.begin(), [](wchar_t character) {
-            return static_cast<wchar_t>(std::towlower(character));
-        });
-        return value;
-    };
-    auto output_name = normalized(to_wide(output.name));
-    std::wstring paired_name;
-    if (output_name.find(L"cable input") != std::wstring::npos) {
-        paired_name = L"cable output";
-    } else if (output_name.find(L"voicemeeter input") != std::wstring::npos) {
-        paired_name = L"voicemeeter output";
-    } else if (output_name.find(L"virtual cable input") != std::wstring::npos) {
-        paired_name = L"virtual cable output";
-    } else if (output_name.find(L"virtual audio input") != std::wstring::npos) {
-        paired_name = L"virtual audio output";
-    }
+    const auto paired_name = paired_capture_name(normalize_endpoint_name(to_wide(output.name)));
     if (paired_name.empty()) return false;
     return std::any_of(app.devices.begin(), app.devices.end(), [&](const auto& device) {
         return device.connection == audio::ConnectionState::connected &&
-               normalized(to_wide(device.name)).find(paired_name) != std::wstring::npos;
+               normalize_endpoint_name(to_wide(device.name)).find(paired_name) != std::wstring::npos;
     });
 }
 
@@ -492,7 +463,7 @@ void refresh_devices(Application& app) {
     app.refreshing_devices = false;
     SetWindowTextW(app.enhancement_status, virtual_output_count > 0
         ? L"Virtual cable detected. Its paired recording endpoint must also be active before routing."
-        : L"No cable. VB-CABLE is VB-Audio donationware; setup needs admin rights and a Windows restart.");
+        : L"No compatible virtual audio driver. VB-CABLE setup needs admin rights and a Windows restart.");
     update_device_status(app);
     update_controls(app);
 }
@@ -606,7 +577,7 @@ void toggle_live_route(Application& app) {
     const int input_index = selected_device_index(app);
     const int output_index = selected_render_device_index(app);
     if (input_index < 0 || output_index < 0) {
-        SetWindowTextW(app.status, L"Select a microphone and a virtual-cable playback endpoint first.");
+        SetWindowTextW(app.status, L"Select a microphone and a compatible virtual playback endpoint first.");
         return;
     }
     const auto input_id = app.devices[static_cast<std::size_t>(input_index)].id;
@@ -614,12 +585,12 @@ void toggle_live_route(Application& app) {
     const auto output_name = to_wide(app.render_devices[static_cast<std::size_t>(output_index)].name);
     if (!is_virtual_cable_output(app.render_devices[static_cast<std::size_t>(output_index)])) {
         SetWindowTextW(app.status,
-            L"Choose a virtual-cable playback endpoint to avoid sending processed microphone audio to speakers.");
+            L"Choose a compatible virtual playback endpoint to avoid sending processed microphone audio to speakers.");
         return;
     }
     if (!has_paired_virtual_capture(app, app.render_devices[static_cast<std::size_t>(output_index)])) {
         SetWindowTextW(app.status,
-            L"The selected virtual cable has no active paired recording endpoint. Check the driver and refresh devices.");
+            L"The selected virtual driver has no active paired recording endpoint. Check the driver and refresh devices.");
         return;
     }
     const auto settings = current_settings(app);
