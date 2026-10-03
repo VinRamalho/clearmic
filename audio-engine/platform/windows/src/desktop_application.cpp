@@ -55,6 +55,7 @@ constexpr UINT live_route_complete_message = WM_APP + 2;
 constexpr UINT live_route_started_message = WM_APP + 3;
 constexpr UINT tray_callback_message = WM_APP + 4;
 constexpr UINT device_refresh_timer = 3;
+constexpr UINT input_meter_timer = 4;
 constexpr int tray_open_command = 201;
 constexpr int tray_route_command = 202;
 constexpr int tray_quit_command = 203;
@@ -771,6 +772,7 @@ void initialize_controls(Application& app) {
     load_settings(app);
     SetTimer(app.window, 1, 3000, nullptr);
     SetTimer(app.window, 2, 80, nullptr);
+    SetTimer(app.window, input_meter_timer, 250, nullptr);
 }
 
 LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
@@ -795,16 +797,16 @@ LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPAR
         return 0;
     case WM_TIMER:
         if (wparam == 1) refresh_devices(*app);
-        else if (wparam == 2) {
-            if (app->live_routing) {
-                const auto input = app->live_metrics.input_rms.load(std::memory_order_relaxed);
-                const auto output = app->live_metrics.output_rms.load(std::memory_order_relaxed);
-                SendMessageW(app->input_level, PBM_SETPOS,
-                             static_cast<WPARAM>(std::clamp(input * 100.0F, 0.0F, 100.0F)), 0);
-                SendMessageW(app->output_level, PBM_SETPOS,
-                             static_cast<WPARAM>(std::clamp(output * 100.0F, 0.0F, 100.0F)), 0);
-                update_live_diagnostics(*app);
-            } else update_idle_input_meter(*app);
+        else if (wparam == 2 && app->live_routing) {
+            const auto input = app->live_metrics.input_rms.load(std::memory_order_relaxed);
+            const auto output = app->live_metrics.output_rms.load(std::memory_order_relaxed);
+            SendMessageW(app->input_level, PBM_SETPOS,
+                         static_cast<WPARAM>(std::clamp(input * 100.0F, 0.0F, 100.0F)), 0);
+            SendMessageW(app->output_level, PBM_SETPOS,
+                         static_cast<WPARAM>(std::clamp(output * 100.0F, 0.0F, 100.0F)), 0);
+            update_live_diagnostics(*app);
+        } else if (wparam == input_meter_timer && !app->live_routing) {
+            update_idle_input_meter(*app);
         } else if (wparam == device_refresh_timer) {
             KillTimer(window, device_refresh_timer);
             refresh_devices(*app);
@@ -836,6 +838,7 @@ LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPAR
                 }
                 update_device_status(*app);
                 update_controls(*app);
+                update_idle_input_meter(*app);
             }
             return 0;
         case render_output_combo:
@@ -934,6 +937,7 @@ LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPAR
         PlaySoundW(nullptr, nullptr, 0);
         KillTimer(window, 1);
         KillTimer(window, 2);
+        KillTimer(window, input_meter_timer);
         KillTimer(window, device_refresh_timer);
         remove_tray_icon(*app);
         DestroyWindow(window);
