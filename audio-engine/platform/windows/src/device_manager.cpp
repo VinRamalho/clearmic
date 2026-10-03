@@ -1,6 +1,7 @@
 #include "clearmic/platform/windows/device_manager.hpp"
 
 #include <windows.h>
+#include <bluetoothapis.h>
 #include <audioclient.h>
 #include <cfgmgr32.h>
 #include <endpointvolume.h>
@@ -21,6 +22,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <unordered_map>
 #include <utility>
 
 #ifndef __IAudioMeterInformation_INTERFACE_DEFINED__
@@ -87,11 +89,73 @@ std::string audio_function_kind(const std::wstring& instance_id, const std::stri
     return "audio-function";
 }
 
+std::optional<std::uint64_t> bluetooth_address_from_instance_id(const std::wstring_view instance_id) {
+    constexpr std::wstring_view device_prefix = L"BTHENUM\\DEV_";
+    std::wstring_view value;
+    if (instance_id.starts_with(device_prefix)) {
+        value = instance_id.substr(device_prefix.size());
+    } else {
+        const auto separator = instance_id.rfind(L'&');
+        if (separator == std::wstring_view::npos) return std::nullopt;
+        value = instance_id.substr(separator + 1);
+    }
+    if (value.size() < 12 || (value.size() > 12 && value[12] != L'_')) return std::nullopt;
+    std::uint64_t address = 0;
+    for (std::size_t index = 0; index < 12; ++index) {
+        const wchar_t character = value[index];
+        unsigned int digit = 0;
+        if (character >= L'0' && character <= L'9') digit = static_cast<unsigned int>(character - L'0');
+        else if (character >= L'a' && character <= L'f') digit = static_cast<unsigned int>(character - L'a' + 10);
+        else if (character >= L'A' && character <= L'F') digit = static_cast<unsigned int>(character - L'A' + 10);
+        else return std::nullopt;
+        address = (address << 4U) | digit;
+    }
+    return address;
+}
+
+std::optional<std::uint64_t> bluetooth_address_for_devnode(DEVINST node) {
+    for (unsigned int depth = 0; depth < 16; ++depth) {
+        std::array<wchar_t, 512> instance_id{};
+        if (CM_Get_Device_IDW(node, instance_id.data(), static_cast<ULONG>(instance_id.size()), 0) == CR_SUCCESS) {
+            if (const auto address = bluetooth_address_from_instance_id(instance_id.data())) return address;
+        }
+        DEVINST parent{};
+        if (CM_Get_Parent(&parent, node, 0) != CR_SUCCESS) break;
+        node = parent;
+    }
+    return std::nullopt;
+}
+
+std::unordered_map<std::uint64_t, bool> bluetooth_connection_states() {
+    BLUETOOTH_DEVICE_SEARCH_PARAMS search{};
+    search.dwSize = sizeof(search);
+    search.fReturnAuthenticated = TRUE;
+    search.fReturnRemembered = TRUE;
+    search.fReturnUnknown = TRUE;
+    search.fReturnConnected = TRUE;
+    search.fIssueInquiry = FALSE;
+    search.hRadio = nullptr;
+
+    std::unordered_map<std::uint64_t, bool> states;
+    BLUETOOTH_DEVICE_INFO info{};
+    info.dwSize = sizeof(info);
+    HBLUETOOTH_DEVICE_FIND found = BluetoothFindFirstDevice(&search, &info);
+    if (!found) return states;
+    struct SearchGuard { HBLUETOOTH_DEVICE_FIND value; ~SearchGuard() { BluetoothFindDeviceClose(value); } } guard{found};
+    do {
+        states[info.Address.ullLong] = info.fConnected != FALSE;
+        info = {};
+        info.dwSize = sizeof(info);
+    } while (BluetoothFindNextDevice(found, &info));
+    return states;
+}
+
 std::vector<audio::AudioDevice> bluetooth_audio_functions() {
     HDEVINFO devices = SetupDiGetClassDevsW(nullptr, L"BTHENUM", nullptr, DIGCF_ALLCLASSES | DIGCF_PRESENT);
     if (devices == INVALID_HANDLE_VALUE) return {};
     struct DeviceSetGuard { HDEVINFO value; ~DeviceSetGuard() { SetupDiDestroyDeviceInfoList(value); } } guard{devices};
     std::vector<audio::AudioDevice> result;
+    const auto connection_states = bluetooth_connection_states();
     for (DWORD index = 0;; ++index) {
         SP_DEVINFO_DATA data{};
         data.cbSize = sizeof(data);
@@ -114,15 +178,16 @@ std::vector<audio::AudioDevice> bluetooth_audio_functions() {
         }
         if (name.empty() || name.find("Audio") == std::string::npos && name.find("Hands-Free") == std::string::npos &&
             name.find("Headset") == std::string::npos && name.find("Headphone") == std::string::npos) continue;
-        ULONG status = 0;
-        ULONG problem = 0;
         audio::AudioDevice info;
         info.id = to_utf8(id.data());
         info.name = std::move(name);
         info.device_kind = audio_function_kind(id.data(), info.name);
         info.selectable = false;
-        if (CM_Get_DevNode_Status(&status, &problem, data.DevInst, 0) == CR_SUCCESS)
-            info.connection = problem == 0 ? audio::ConnectionState::connected : audio::ConnectionState::disconnected;
+        if (const auto address = bluetooth_address_for_devnode(data.DevInst)) {
+            const auto state = connection_states.find(*address);
+            if (state != connection_states.end())
+                info.connection = state->second ? audio::ConnectionState::connected : audio::ConnectionState::disconnected;
+        }
         result.push_back(std::move(info));
     }
     return result;

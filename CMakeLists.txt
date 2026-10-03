@@ -108,7 +108,7 @@ if(WIN32)
         audio-engine/platform/windows/src/live_processing.cpp
         audio-engine/platform/windows/src/desktop_application.cpp)
     target_include_directories(clearmic_platform PUBLIC audio-engine/platform/windows/include)
-    target_link_libraries(clearmic_platform PUBLIC clearmic_core ole32 uuid setupapi cfgmgr32 comctl32 shell32 winmm)
+    target_link_libraries(clearmic_platform PUBLIC clearmic_core ole32 uuid setupapi cfgmgr32 bthprops comctl32 shell32 winmm)
     target_compile_definitions(clearmic_platform PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 elseif(UNIX AND NOT APPLE)
     find_package(PkgConfig REQUIRED)
