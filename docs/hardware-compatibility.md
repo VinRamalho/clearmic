@@ -14,6 +14,7 @@
 
 - Input endpoint observed: `Microfone (Realtek(R) Audio)`.
 - Output endpoint observed: `Altofalantes (Realtek(R) Audio)`.
+- A fresh native MinGW-built `clearmic-cli devices` run on 2026-10-03 again listed the Realtek endpoint as the only selectable microphone (48 kHz, two channels). The supplemental inventory also listed `EDIFIER TWS1 Pro 2 Hands-Free AG` and `WF-C710N Hands-Free AG` as non-selectable Bluetooth audio functions, not capture endpoints; this CLI output included no battery values for those functions. The matching `clearmic-core-tests.exe` built by MinGW ran natively on Windows and exited with code 0.
 - The WF-C710N appears as a Bluetooth PnP device and as `WF-C710N Hands-Free` / `WF-C710N` MEDIA functions under one Windows device container. It does not currently appear as an active `AudioEndpoint` capture device, so ClearMic cannot select it through WASAPI at this time.
 - The CLI's supplemental Bluetooth inventory now lists the WF-C710N hands-free function as connected and `selectable: no`; the separate Realtek AudioEndpoint remains the only selectable microphone in this run.
 - A native Windows `record-test 3` invocation selected the Realtek default endpoint, completed WASAPI capture, and created valid 48 kHz mono WAVs with 144,000 frames each.
