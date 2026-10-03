@@ -21,6 +21,9 @@
 
 namespace clearmic::platform::windows {
 namespace {
+constexpr GUID pcm_subtype{0x00000001, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}};
+constexpr GUID ieee_float_subtype{0x00000003, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}};
+
 template <typename T> struct ComRelease { void operator()(T* value) const noexcept { if (value) value->Release(); } };
 template <typename T> using ComPtr = std::unique_ptr<T, ComRelease<T>>;
 
@@ -54,8 +57,8 @@ AudioFormat parse_format(const WAVEFORMATEX& format) {
     AudioFormat result{format.nSamplesPerSec, format.nChannels, format.wBitsPerSample, format.nBlockAlign, false};
     if (format.wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
         const auto& extended = reinterpret_cast<const WAVEFORMATEXTENSIBLE&>(format);
-        if (extended.SubFormat == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT) result.floating_point = true;
-        else if (extended.SubFormat != KSDATAFORMAT_SUBTYPE_PCM)
+        if (IsEqualGUID(extended.SubFormat, ieee_float_subtype)) result.floating_point = true;
+        else if (!IsEqualGUID(extended.SubFormat, pcm_subtype))
             throw std::runtime_error("Unsupported Windows microphone encoding");
     } else if (format.wFormatTag == WAVE_FORMAT_IEEE_FLOAT) {
         result.floating_point = true;

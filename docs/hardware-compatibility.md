@@ -13,8 +13,9 @@
 - Input endpoint observed: `Microfone (Realtek(R) Audio)`.
 - Output endpoint observed: `Altofalantes (Realtek(R) Audio)`.
 - No Sony or USB wireless-microphone input endpoint appeared in the current AudioEndpoint list.
-- A WASAPI bounded `record-test` implementation now captures from an active endpoint and creates A/B files, but this machine has not yet been used for an explicit hardware capture test. The available Realtek microphone may be used for that validation.
-- Validate it with `clearmic-cli record-test 5 original.wav processed.wav [device-id]`; omit the ID to use the Windows default microphone. Actual capture remains unverified on the available hardware.
+- A native Windows `record-test 3` invocation selected the Realtek default endpoint, completed WASAPI capture, and created valid 48 kHz mono WAVs with 144,000 frames each.
+- The captured 3-second sample was all zero (peak 0, RMS 0), so this run proves endpoint opening, buffer flow, and WAV output but does not verify an audible microphone signal or enhancement quality. The microphone may have been muted or no sound was present during the test.
+- Repeat `clearmic-cli record-test 5 original.wav processed.wav [device-id]` while speaking into the device, then compare both files. Omit the ID to use the Windows default microphone.
 
 ### Sony WF-C710N
 

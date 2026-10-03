@@ -4,7 +4,6 @@
 #include <audioclient.h>
 #include <mmdeviceapi.h>
 #include <propvarutil.h>
-#include <functiondiscoverykeys_devpkey.h>
 
 #include <memory>
 #include <stdexcept>
@@ -14,6 +13,8 @@
 
 namespace clearmic::platform::windows {
 namespace {
+constexpr PROPERTYKEY device_friendly_name_key{
+    {0xa45c254e, 0xdf1c, 0x4efd, {0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0}}, 14};
 template <typename T> struct ComRelease { void operator()(T* value) const noexcept { if (value) value->Release(); } };
 template <typename T> using ComPtr = std::unique_ptr<T, ComRelease<T>>;
 
@@ -80,7 +81,7 @@ std::vector<audio::AudioDevice> DeviceManager::input_devices() {
             ComPtr<IPropertyStore> properties(raw_properties);
             PROPVARIANT name;
             PropVariantInit(&name);
-            if (SUCCEEDED(properties->GetValue(PKEY_Device_FriendlyName, &name)) && name.vt == VT_LPWSTR)
+            if (SUCCEEDED(properties->GetValue(device_friendly_name_key, &name)) && name.vt == VT_LPWSTR)
                 info.name = to_utf8(name.pwszVal);
             PropVariantClear(&name);
         }
