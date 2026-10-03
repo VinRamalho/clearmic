@@ -14,6 +14,8 @@ for command in pipewire wireplumber pw-cli pw-cat timeout python3; do
         exit 2
     fi
 done
+pipewire --version
+wireplumber --version
 
 tmp=$(mktemp -d /tmp/clearmic-route-e2e.XXXXXX)
 runtime="$tmp/runtime"
