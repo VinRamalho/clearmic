@@ -32,6 +32,8 @@ struct AudioDevice {
     std::string device_kind{"microphone"};
     bool selectable{true};
     std::optional<std::string> bluetooth_address;
+    std::optional<std::string> bluetooth_profile;
+    std::optional<std::string> bluetooth_codec;
 };
 
 class IAudioDeviceManager {

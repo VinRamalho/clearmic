@@ -20,6 +20,11 @@ int main() {
     headset_function.connection = ConnectionState::connected;
     if (headset_function.selectable || headset_function.connection != ConnectionState::connected ||
         headset_function.device_kind != "bluetooth-headset-function") return 9;
+    if (device.bluetooth_profile || device.bluetooth_codec) return 13;
+    device.bluetooth_profile = "hfp-hf";
+    device.bluetooth_codec = "msbc";
+    if (!device.bluetooth_profile || *device.bluetooth_profile != "hfp-hf" ||
+        !device.bluetooth_codec || *device.bluetooth_codec != "msbc") return 14;
     if (device.capabilities.battery != std::nullopt) return 2;
     if (device.capabilities.transmitter_battery != std::nullopt) return 3;
     if (device.capabilities.receiver_battery != std::nullopt) return 4;

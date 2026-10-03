@@ -79,6 +79,10 @@ void on_global(void* data, const std::uint32_t global_id, const std::uint32_t, c
     const char* bluetooth_address = spa_dict_lookup(properties, "api.bluez5.address");
     if (!bluetooth_address) bluetooth_address = spa_dict_lookup(properties, "bluez5.address");
     if (bluetooth_address && *bluetooth_address) device.bluetooth_address = bluetooth_address;
+    const char* bluetooth_profile = spa_dict_lookup(properties, "api.bluez5.profile");
+    if (bluetooth_profile && *bluetooth_profile) device.bluetooth_profile = bluetooth_profile;
+    const char* bluetooth_codec = spa_dict_lookup(properties, "api.bluez5.codec");
+    if (bluetooth_codec && *bluetooth_codec) device.bluetooth_codec = bluetooth_codec;
     state.devices.push_back(std::move(device));
 }
 const pw_registry_events registry_events{.version = PW_VERSION_REGISTRY_EVENTS, .global = on_global};

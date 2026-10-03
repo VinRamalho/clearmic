@@ -223,6 +223,8 @@ void update_device_status(Application& app) {
     const char* connection = selected.connection == audio::ConnectionState::connected ? "Connected" : "Status unknown";
     std::string status = std::string(connection) + " · " + selected.id;
     if (selected.bluetooth_address) status += " · Bluetooth " + *selected.bluetooth_address;
+    if (selected.bluetooth_profile) status += " · Profile " + *selected.bluetooth_profile;
+    if (selected.bluetooth_codec) status += " · Codec " + *selected.bluetooth_codec;
     if (selected.sample_rate_hz) status += " · " + std::to_string(*selected.sample_rate_hz) + " Hz";
     if (selected.channels) status += " · " + std::to_string(*selected.channels) + " ch";
     if (selected.capabilities.battery && selected.capabilities.battery->percentage)
