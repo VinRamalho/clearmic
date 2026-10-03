@@ -4,7 +4,7 @@
 
 ClearMic is an open-source, cross-platform desktop application designed to improve microphone voice quality in real time.
 
-> **Development status:** the C++20 device model, Windows WASAPI and Linux PipeWire input backends, shared stateful DSP chain, and CI builds for Windows and Ubuntu 24.04 are in place. Both platforms provide CLI `record-test` A/B capture. Linux has a GTK desktop panel to discover/select a PipeWire microphone, save the selection and processing options, start/stop the processed `ClearMic Virtual Microphone` service, record/play a five-second A/B comparison using the selected preset and controls, refresh microphone availability automatically while idle, retry the service after unexpected failures, and optionally keep running in the system tray. When streaming, the Linux panel shows live input and processed RMS meters. It exposes a master enhancement switch, noise suppression, noise gate, automatic gain, compressor, and input gain controls. Linux also reads a Bluetooth battery percentage from BlueZ when PipeWire supplies a matching Bluetooth address and BlueZ reports the value. Windows has a native desktop panel for WASAPI endpoint discovery, persistent processing controls, five-second A/B capture, and in-app playback. Windows real-time virtual-microphone routing, Windows and USB receiver battery telemetry, a verified installer, and native audio-quality validation remain incomplete. The Ubuntu `.deb` includes the GUI. This is an early development project, not a finished product.
+> **Development status:** the C++20 device model, Windows WASAPI and Linux PipeWire input backends, shared stateful DSP chain, and CI builds for Windows and Ubuntu 24.04 are in place. Both platforms provide CLI `record-test` A/B capture. Linux has a GTK desktop panel to discover/select a PipeWire microphone, save the selection and processing options, start/stop the processed `ClearMic Virtual Microphone` service, record/play a five-second A/B comparison using the selected preset and controls, refresh microphone availability automatically while idle, retry the service after unexpected failures, and optionally keep running in the system tray. When streaming, the Linux panel shows live input and processed RMS meters. It exposes a master enhancement switch, noise suppression, noise gate, automatic gain, compressor, and input gain controls. Linux also reads a Bluetooth battery percentage from BlueZ when PipeWire supplies a matching Bluetooth address and BlueZ reports the value. Windows has a native desktop panel for WASAPI endpoint discovery, persistent processing controls, five-second A/B capture, and in-app playback. The CPack/WiX MSI now passes CI installation, launch, and removal checks. Windows real-time virtual-microphone routing, Windows and USB receiver battery telemetry, and native audio-quality validation remain incomplete. The Ubuntu `.deb` includes the GUI. This is an early development project, not a finished product.
 
 It currently targets background noise and inconsistent microphone levels while preserving a natural-sounding voice. Acoustic echo cancellation and room reverberation reduction are not implemented.
 
@@ -119,7 +119,7 @@ ClearMic targets:
 | Platform | Audio Backend | Status |
 | --- | --- | --- |
 | Ubuntu / Linux | PipeWire | 🚧 GTK desktop panel, device monitoring, presets/controls, A/B capture/playback, live service, and virtual source; native hardware quality validation pending |
-| Windows 11 | WASAPI | 🚧 Native desktop panel, device monitoring, saved DSP controls, A/B capture/playback; continuous virtual microphone and verified installer pending |
+| Windows 11 | WASAPI | 🚧 Native desktop panel, device monitoring, saved DSP controls, A/B capture/playback, and CI-verified MSI lifecycle; continuous virtual microphone pending |
 
 Additional Linux distributions using PipeWire may work in the future.
 
@@ -425,7 +425,7 @@ The eventual goal is to distribute ClearMic as a normal desktop application.
 
 ### Windows
 
-The Windows workflow builds a CPack/WiX MSI containing the desktop and CLI executables. The workflow builds and tests the binaries, but its MSI install/remove lifecycle check fails and requires diagnosis before the installer can be considered verified. A public release also needs a project license and a Windows virtual-microphone strategy.
+The Windows workflow builds a CPack/WiX MSI containing the desktop and CLI executables and verifies installation, installed files, desktop launch, and removal. A public release still needs a project license and a Windows virtual-microphone strategy.
 
 ### Ubuntu
 
@@ -497,9 +497,9 @@ Build the Ubuntu `.deb` from an Ubuntu 24.04 environment using `packaging/linux/
 
 ### Phase 7 — Distribution
 
-- [ ] Windows installer
+- [x] Windows CPack/WiX installer with CI install, launch, and removal validation
 - [x] Ubuntu command-line `.deb`
-- [x] GitHub Actions builds (Windows and Ubuntu; MSI lifecycle check still fails)
+- [x] GitHub Actions builds (Windows and Ubuntu; MSI lifecycle check passes)
 - [x] Automated tests (core and CLI validation; see CI for platform coverage)
 - [ ] Release pipeline
 
