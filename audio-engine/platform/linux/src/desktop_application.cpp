@@ -14,6 +14,7 @@ struct Application {
     const char* executable{};
     GtkWidget* window{};
     GtkWidget* devices{};
+    GtkWidget* preset{};
     GtkWidget* device_status{};
     GtkWidget* service_status{};
     GtkWidget* start_button{};
@@ -47,6 +48,19 @@ std::string stored_device_id() {
     return result;
 }
 
+std::string stored_preset() {
+    GKeyFile* key_file = g_key_file_new();
+    const auto path = settings_path();
+    GError* error = nullptr;
+    g_key_file_load_from_file(key_file, path.c_str(), G_KEY_FILE_NONE, &error);
+    if (error) g_error_free(error);
+    gchar* value = g_key_file_get_string(key_file, "audio", "preset", nullptr);
+    std::string result = value ? value : "natural";
+    g_free(value);
+    g_key_file_unref(key_file);
+    return result;
+}
+
 void save_device_id(const std::string& value) {
     GKeyFile* key_file = g_key_file_new();
     const auto path = settings_path();
@@ -54,6 +68,22 @@ void save_device_id(const std::string& value) {
     g_key_file_load_from_file(key_file, path.c_str(), G_KEY_FILE_NONE, &error);
     if (error) g_error_free(error);
     g_key_file_set_string(key_file, "audio", "input-device", value.c_str());
+    gsize length = 0;
+    gchar* data = g_key_file_to_data(key_file, &length, nullptr);
+    if (data) {
+        g_file_set_contents(path.c_str(), data, static_cast<gssize>(length), nullptr);
+        g_free(data);
+    }
+    g_key_file_unref(key_file);
+}
+
+void save_preset(const std::string& value) {
+    GKeyFile* key_file = g_key_file_new();
+    const auto path = settings_path();
+    GError* error = nullptr;
+    g_key_file_load_from_file(key_file, path.c_str(), G_KEY_FILE_NONE, &error);
+    if (error) g_error_free(error);
+    g_key_file_set_string(key_file, "audio", "preset", value.c_str());
     gsize length = 0;
     gchar* data = g_key_file_to_data(key_file, &length, nullptr);
     if (data) {
@@ -132,6 +162,13 @@ void on_device_changed(GtkComboBox* combo, gpointer data) {
     update_controls(app);
 }
 
+void on_preset_changed(GtkComboBox* combo, gpointer) {
+    const int index = gtk_combo_box_get_active(combo);
+    if (index < 0 || index > 2) return;
+    const char* names[] = {"natural", "meeting", "strong"};
+    save_preset(names[index]);
+}
+
 void on_refresh(GtkButton*, gpointer data) { refresh_devices(*static_cast<Application*>(data)); }
 
 void on_start(GtkButton*, gpointer data) {
@@ -139,9 +176,11 @@ void on_start(GtkButton*, gpointer data) {
     const int index = selected_index(app);
     if (index < 0) return;
     const auto& id = app.inputs[static_cast<std::size_t>(index)].id;
+    const int preset_index = std::clamp(gtk_combo_box_get_active(GTK_COMBO_BOX(app.preset)), 0, 2);
+    const char* presets[] = {"natural", "meeting", "strong"};
     GError* error = nullptr;
     app.service = g_subprocess_new(static_cast<GSubprocessFlags>(G_SUBPROCESS_FLAGS_STDOUT_SILENCE), &error,
-                                   app.executable, "serve", id.c_str(), nullptr);
+                                   app.executable, "serve", id.c_str(), presets[preset_index], nullptr);
     if (!app.service) {
         gtk_label_set_text(GTK_LABEL(app.service_status), error ? error->message : "Could not start audio service.");
         if (error) g_error_free(error);
@@ -210,6 +249,12 @@ int run_desktop_application(const char* executable_path) {
     gtk_box_pack_start(GTK_BOX(layout), make_label("Microphone"), FALSE, FALSE, 0);
     app.devices = gtk_combo_box_text_new();
     gtk_box_pack_start(GTK_BOX(layout), app.devices, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(layout), make_label("Processing profile"), FALSE, FALSE, 0);
+    app.preset = gtk_combo_box_text_new();
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(app.preset), "Natural");
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(app.preset), "Meeting");
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(app.preset), "Strong Noise Reduction");
+    gtk_box_pack_start(GTK_BOX(layout), app.preset, FALSE, FALSE, 0);
     app.device_status = make_label("Discovering PipeWire microphones…");
     gtk_label_set_line_wrap(GTK_LABEL(app.device_status), TRUE);
     gtk_box_pack_start(GTK_BOX(layout), app.device_status, FALSE, FALSE, 0);
@@ -234,9 +279,13 @@ int run_desktop_application(const char* executable_path) {
 
     g_signal_connect(app.window, "destroy", G_CALLBACK(on_window_destroy), &app);
     g_signal_connect(app.devices, "changed", G_CALLBACK(on_device_changed), &app);
+    g_signal_connect(app.preset, "changed", G_CALLBACK(on_preset_changed), &app);
     g_signal_connect(app.refresh_button, "clicked", G_CALLBACK(on_refresh), &app);
     g_signal_connect(app.start_button, "clicked", G_CALLBACK(on_start), &app);
     g_signal_connect(app.stop_button, "clicked", G_CALLBACK(on_stop), &app);
+    const auto preset = stored_preset();
+    const int preset_index = preset == "meeting" ? 1 : (preset == "strong" ? 2 : 0);
+    gtk_combo_box_set_active(GTK_COMBO_BOX(app.preset), preset_index);
     refresh_devices(app);
     gtk_widget_show_all(app.window);
     gtk_main();

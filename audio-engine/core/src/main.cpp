@@ -1,5 +1,6 @@
 #include "clearmic/audio/device.hpp"
 #include "clearmic/audio/processing.hpp"
+#include "clearmic/audio/processor_chain.hpp"
 #include "clearmic/audio/wav.hpp"
 
 #include <iostream>
@@ -25,7 +26,7 @@ void print_usage() {
                  "  clearmic-cli record-test <seconds> <original.wav> <processed.wav> [device-id]\n"
 #endif
 #ifdef __linux__
-                 "  clearmic-cli serve [device-id]\n"
+                 "  clearmic-cli serve [device-id] [natural|meeting|strong]\n"
                  "  clearmic-cli gui\n"
 #endif
                  ;
@@ -36,9 +37,22 @@ int main(const int argc, char** argv) {
 #ifdef __linux__
     if (argc == 2 && std::string_view(argv[1]) == "gui")
         return clearmic::platform::pipewire::run_desktop_application(argv[0]);
-    if ((argc == 2 || argc == 3) && std::string_view(argv[1]) == "serve") {
+    if (argc >= 2 && argc <= 4 && std::string_view(argv[1]) == "serve") {
         try {
-            clearmic::platform::pipewire::run_realtime_microphone(argc == 3 ? argv[2] : "");
+            std::string device_id;
+            clearmic::audio::Preset preset = clearmic::audio::Preset::natural;
+            auto parse_preset = [&](const std::string_view name) {
+                if (name == "natural") preset = clearmic::audio::Preset::natural;
+                else if (name == "meeting") preset = clearmic::audio::Preset::meeting;
+                else if (name == "strong") preset = clearmic::audio::Preset::strong_noise_reduction;
+                else return false;
+                return true;
+            };
+            if (argc >= 3) {
+                if (!parse_preset(argv[2])) device_id = argv[2];
+            }
+            if (argc == 4 && !parse_preset(argv[3])) throw std::invalid_argument("Unknown DSP preset; choose natural, meeting, or strong");
+            clearmic::platform::pipewire::run_realtime_microphone(device_id, preset);
         } catch (const std::exception& error) {
             std::cerr << "ClearMic audio service stopped: " << error.what() << "\n";
             return 1;

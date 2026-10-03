@@ -17,6 +17,9 @@ Capture up to 30 seconds and write the original and processed samples for manual
 .B serve
 Continuously process the default PipeWire microphone and expose the result as ClearMic Virtual Microphone. Keep the command running while another application uses the virtual source. Stop with Ctrl+C.
 .TP
+.B serve \fIdevice-id\fR [\fInatural|meeting|strong\fR]
+Select a discovered PipeWire source and processing preset. The GTK panel uses this command internally.
+.TP
 .B process \fIinput.wav output.wav\fR
 Apply the offline processor to supported 48 kHz PCM16 WAV audio.
 .SH REQUIREMENTS
