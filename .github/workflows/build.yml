@@ -29,7 +29,41 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: clearmic-windows-validation
-          path: build/Release/clearmic-cli.exe
+          path: |
+            build/Release/clearmic-cli.exe
+            build/Release/clearmic-desktop.exe
+          retention-days: 3
+      - name: Build Windows installer
+        run: cpack --config build/CPackConfig.cmake -G WIX -B build/installer
+      - name: Install and remove Windows installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -Path build/installer -Filter *.msi | Select-Object -First 1
+          if (-not $installer) { throw "CPack did not produce a Windows MSI" }
+          & msiexec.exe /i $installer.FullName /qn /norestart
+          if ($LASTEXITCODE -ne 0) { throw "MSI installation failed with exit code $LASTEXITCODE" }
+          $installedFiles = Get-ChildItem -LiteralPath (Join-Path $env:ProgramFiles "ClearMic") -File -Recurse
+          if (-not ($installedFiles.Name -contains "clearmic-desktop.exe")) { throw "Installed desktop application was not found" }
+          if (-not ($installedFiles.Name -contains "clearmic-cli.exe")) { throw "Installed CLI was not found" }
+          $desktopExecutable = $installedFiles | Where-Object Name -eq "clearmic-desktop.exe" | Select-Object -First 1
+          $desktopProcess = Start-Process -FilePath $desktopExecutable.FullName -PassThru
+          Start-Sleep -Seconds 2
+          $desktopProcess.Refresh()
+          if ($desktopProcess.HasExited) { throw "Installed desktop application exited during startup" }
+          if (-not $desktopProcess.CloseMainWindow()) { Stop-Process -Id $desktopProcess.Id -Force }
+          if (-not $desktopProcess.HasExited -and -not $desktopProcess.WaitForExit(5000)) {
+            Stop-Process -Id $desktopProcess.Id -Force
+            throw "Installed desktop application did not close after a window-close request"
+          }
+          & msiexec.exe /x $installer.FullName /qn /norestart
+          if ($LASTEXITCODE -ne 0) { throw "MSI removal failed with exit code $LASTEXITCODE" }
+          $remainingFiles = Get-ChildItem -LiteralPath (Join-Path $env:ProgramFiles "ClearMic") -File -Recurse -ErrorAction SilentlyContinue
+          if ($remainingFiles.Name -contains "clearmic-desktop.exe") { throw "MSI removal left the desktop application installed" }
+      - name: Preserve Windows installer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: clearmic-windows-msi
+          path: build/installer/*.msi
           retention-days: 3
       - name: Preserve Windows build diagnostics
         if: always()

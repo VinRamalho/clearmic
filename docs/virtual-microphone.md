@@ -14,7 +14,7 @@ The command opens the selected microphone (or PipeWire's default source), proces
 
 ## Windows
 
-WASAPI capture enumeration does not create a microphone endpoint. The current Windows backend only opens capture endpoints; it does not publish processed PCM as a Windows microphone. A Windows virtual endpoint requires a driver or a supported third-party virtual audio component. ClearMic has not installed a driver or exposed a virtual microphone. Driver signing, setup requirements, maintenance, and security implications must be evaluated before choosing a shipping strategy.
+WASAPI capture enumeration does not create a microphone endpoint. The current Windows panel discovers active endpoints and supports local A/B recording/playback, but it does not publish processed PCM as a Windows microphone. Microsoft's [SYSVAD sample](https://learn.microsoft.com/en-us/samples/microsoft/windows-driver-samples/sysvad-virtual-audio-device-driver-sample/) demonstrates a WDM virtual audio device driver. Microsoft documents that 64-bit kernel drivers must be signed and that public driver distribution uses its Hardware Developer Center signing process ([driver signing](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/driver-signing), [public release signing](https://learn.microsoft.com/en-us/windows-hardware/drivers/develop/signing-a-driver-for-public-release)). ClearMic has not installed a driver or exposed a virtual microphone; the MSI must not imply otherwise. The app still needs a maintainable virtual endpoint strategy and signed-driver release path.
 
 ## Current status
 

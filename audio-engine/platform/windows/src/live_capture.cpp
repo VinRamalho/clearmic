@@ -87,10 +87,10 @@ float read_sample(const BYTE* frame, const AudioFormat& format, const std::uint1
     return static_cast<float>(value) / 32768.0F;
 }
 
-audio::PcmAudio process_for_comparison(audio::PcmAudio original) {
+audio::PcmAudio process_for_comparison(audio::PcmAudio original, const audio::ProcessingSettings settings) {
     audio::PcmAudio processed{original.sample_rate_hz, original.channels, {}};
     processed.samples.resize(original.samples.size() + audio::NoiseSuppressor::frame_samples);
-    audio::ProcessorChain processor(original.channels);
+    audio::ProcessorChain processor(original.channels, settings);
     auto output = std::span<std::int16_t>(processed.samples);
     processor.process(original.samples, output.first(original.samples.size()));
     std::vector<std::int16_t> silence(audio::NoiseSuppressor::frame_samples, 0);
@@ -103,7 +103,8 @@ audio::PcmAudio process_for_comparison(audio::PcmAudio original) {
 }
 
 audio::AudioComparison capture_processed_audio(const std::string& device_id,
-                                               const std::uint32_t duration_seconds) {
+                                               const std::uint32_t duration_seconds,
+                                               const audio::ProcessingSettings settings) {
     if (duration_seconds == 0 || duration_seconds > 30)
         throw std::invalid_argument("Capture duration must be between 1 and 30 seconds");
     const auto devices = DeviceManager{}.input_devices();
@@ -214,7 +215,7 @@ audio::AudioComparison capture_processed_audio(const std::string& device_id,
         const auto value = std::lerp(mono_source[source_index], mono_source[next_index], fraction) * 32768.0F;
         original.samples[frame] = static_cast<std::int16_t>(std::lrint(std::clamp(value, -32768.0F, 32767.0F)));
     }
-    auto processed = process_for_comparison(original);
+    auto processed = process_for_comparison(original, settings);
     return audio::AudioComparison{std::move(original), std::move(processed)};
 }
 }
