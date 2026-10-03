@@ -364,7 +364,7 @@ void on_refresh(GtkButton*, gpointer data) { refresh_devices(*static_cast<Applic
 
 gboolean on_device_refresh_timer(gpointer data) {
     auto& app = *static_cast<Application*>(data);
-    if (!app.service && !app.test_capture) refresh_devices(app);
+    if (!app.service && !app.test_capture && !app.restart_source) refresh_devices(app);
     return G_SOURCE_CONTINUE;
 }
 
