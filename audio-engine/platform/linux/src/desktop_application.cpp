@@ -1,6 +1,7 @@
 #include "clearmic/platform/linux/device_manager.hpp"
 
 #include <gtk/gtk.h>
+#include <gst/gst.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -23,10 +24,19 @@ struct Application {
     GtkWidget* start_button{};
     GtkWidget* stop_button{};
     GtkWidget* refresh_button{};
+    GtkWidget* record_button{};
+    GtkWidget* play_original_button{};
+    GtkWidget* play_processed_button{};
+    GtkWidget* stop_playback_button{};
     std::vector<audio::AudioDevice> inputs;
     GSubprocess* service{};
+    GSubprocess* test_capture{};
     GDataInputStream* service_output{};
     GCancellable* output_cancel{};
+    GstElement* player{};
+    guint player_bus_watch{};
+    std::string original_path;
+    std::string processed_path;
 };
 
 std::string settings_path() {
@@ -119,8 +129,14 @@ void update_device_status(Application& app) {
 
 void update_controls(Application& app) {
     const bool running = app.service != nullptr;
-    gtk_widget_set_sensitive(app.start_button, !running && selected_index(app) >= 0);
+    gtk_widget_set_sensitive(app.start_button, !running && app.test_capture == nullptr && selected_index(app) >= 0);
     gtk_widget_set_sensitive(app.stop_button, running);
+    gtk_widget_set_sensitive(app.devices, !running && app.test_capture == nullptr);
+    gtk_widget_set_sensitive(app.refresh_button, !running && app.test_capture == nullptr);
+    gtk_widget_set_sensitive(app.record_button, !running && app.test_capture == nullptr && selected_index(app) >= 0);
+    gtk_widget_set_sensitive(app.play_original_button, app.player && app.test_capture == nullptr && !app.original_path.empty());
+    gtk_widget_set_sensitive(app.play_processed_button, app.player && app.test_capture == nullptr && !app.processed_path.empty());
+    gtk_widget_set_sensitive(app.stop_playback_button, app.player != nullptr);
 }
 
 void refresh_devices(Application& app) {
@@ -175,6 +191,112 @@ void on_preset_changed(GtkComboBox* combo, gpointer) {
 }
 
 void on_refresh(GtkButton*, gpointer data) { refresh_devices(*static_cast<Application*>(data)); }
+
+gboolean on_player_message(GstBus*, GstMessage* message, gpointer user_data) {
+    auto& app = *static_cast<Application*>(user_data);
+    if (GST_MESSAGE_TYPE(message) == GST_MESSAGE_EOS) {
+        gst_element_set_state(app.player, GST_STATE_NULL);
+        gtk_label_set_text(GTK_LABEL(app.service_status), "A/B sample playback finished.");
+        update_controls(app);
+    } else if (GST_MESSAGE_TYPE(message) == GST_MESSAGE_ERROR) {
+        GError* error = nullptr;
+        gchar* debug = nullptr;
+        gst_message_parse_error(message, &error, &debug);
+        gtk_label_set_text(GTK_LABEL(app.service_status), error ? error->message : "Could not play the A/B sample.");
+        if (error) g_error_free(error);
+        g_free(debug);
+        gst_element_set_state(app.player, GST_STATE_NULL);
+        update_controls(app);
+    }
+    return G_SOURCE_CONTINUE;
+}
+
+void play_sample(Application& app, const std::string& path, const char* label) {
+    if (!app.player) return;
+    gst_element_set_state(app.player, GST_STATE_NULL);
+    GError* error = nullptr;
+    gchar* uri = gst_filename_to_uri(path.c_str(), &error);
+    if (!uri) {
+        gtk_label_set_text(GTK_LABEL(app.service_status), error ? error->message : "Could not open the A/B recording.");
+        if (error) g_error_free(error);
+        return;
+    }
+    g_object_set(app.player, "uri", uri, nullptr);
+    g_free(uri);
+    if (gst_element_set_state(app.player, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE) {
+        gtk_label_set_text(GTK_LABEL(app.service_status), "Could not start A/B sample playback.");
+        return;
+    }
+    std::string status = std::string("Playing ") + label + " sample.";
+    gtk_label_set_text(GTK_LABEL(app.service_status), status.c_str());
+    update_controls(app);
+}
+
+void on_play_original(GtkButton*, gpointer data) {
+    auto& app = *static_cast<Application*>(data);
+    play_sample(app, app.original_path, "original");
+}
+
+void on_play_processed(GtkButton*, gpointer data) {
+    auto& app = *static_cast<Application*>(data);
+    play_sample(app, app.processed_path, "processed");
+}
+
+void on_stop_playback(GtkButton*, gpointer data) {
+    auto& app = *static_cast<Application*>(data);
+    if (app.player) gst_element_set_state(app.player, GST_STATE_NULL);
+    gtk_label_set_text(GTK_LABEL(app.service_status), "A/B sample playback stopped.");
+    update_controls(app);
+}
+
+void on_record_sample(GtkButton*, gpointer data) {
+    auto& app = *static_cast<Application*>(data);
+    const int index = selected_index(app);
+    if (index < 0 || app.test_capture) return;
+    gchar* directory = g_build_filename(g_get_user_cache_dir(), "clearmic", "ab-tests", nullptr);
+    g_mkdir_with_parents(directory, 0700);
+    gchar* original = g_build_filename(directory, "original.wav", nullptr);
+    gchar* processed = g_build_filename(directory, "processed.wav", nullptr);
+    app.original_path = original;
+    app.processed_path = processed;
+    const auto device_id = app.inputs[static_cast<std::size_t>(index)].id;
+    GError* error = nullptr;
+    app.test_capture = g_subprocess_new(static_cast<GSubprocessFlags>(G_SUBPROCESS_FLAGS_STDOUT_SILENCE), &error,
+                                        app.executable, "record-test", "5", original, processed,
+                                        device_id.c_str(), nullptr);
+    g_free(directory);
+    g_free(original);
+    g_free(processed);
+    if (!app.test_capture) {
+        gtk_label_set_text(GTK_LABEL(app.service_status), error ? error->message : "Could not start A/B recording.");
+        if (error) g_error_free(error);
+        app.original_path.clear();
+        app.processed_path.clear();
+        update_controls(app);
+        return;
+    }
+    gtk_label_set_text(GTK_LABEL(app.service_status), "Recording five seconds for local A/B comparison…");
+    gtk_widget_set_sensitive(app.devices, FALSE);
+    gtk_widget_set_sensitive(app.refresh_button, FALSE);
+    update_controls(app);
+    g_subprocess_wait_check_async(app.test_capture, nullptr,
+        [](GObject* source, GAsyncResult* result, gpointer user_data) {
+            auto& state = *static_cast<Application*>(user_data);
+            GError* wait_error = nullptr;
+            if (!g_subprocess_wait_check_finish(G_SUBPROCESS(source), result, &wait_error)) {
+                gtk_label_set_text(GTK_LABEL(state.service_status), wait_error ? wait_error->message : "A/B recording failed.");
+                if (wait_error) g_error_free(wait_error);
+                state.original_path.clear();
+                state.processed_path.clear();
+            } else {
+                gtk_label_set_text(GTK_LABEL(state.service_status), "A/B sample ready. Play the original or processed recording.");
+            }
+            g_clear_object(&state.test_capture);
+            gtk_widget_set_sensitive(state.devices, TRUE);
+            gtk_widget_set_sensitive(state.refresh_button, TRUE);
+            update_controls(state);
+        }, &app);
+}
 
 void read_service_output(GObject* source, GAsyncResult* result, gpointer user_data) {
     auto& app = *static_cast<Application*>(user_data);
@@ -260,9 +382,18 @@ void on_window_destroy(GtkWidget*, gpointer data) {
         g_subprocess_send_signal(app.service, SIGTERM);
         g_subprocess_wait(app.service, nullptr, nullptr);
     }
+    if (app.test_capture) {
+        g_subprocess_send_signal(app.test_capture, SIGTERM);
+        g_subprocess_wait(app.test_capture, nullptr, nullptr);
+    }
+    if (app.player) gst_element_set_state(app.player, GST_STATE_NULL);
+    if (app.player_bus_watch) g_source_remove(app.player_bus_watch);
+    g_clear_object(&app.player);
     g_clear_object(&app.service_output);
     g_clear_object(&app.output_cancel);
     g_clear_object(&app.service);
+    g_clear_object(&app.test_capture);
+    gtk_main_quit();
 }
 
 GtkWidget* make_label(const char* text) {
@@ -273,6 +404,7 @@ GtkWidget* make_label(const char* text) {
 }
 
 int run_desktop_application(const char* executable_path) {
+    gst_init(nullptr, nullptr);
     int argc = 0;
     char** argv = nullptr;
     gtk_init(&argc, &argv);
@@ -280,8 +412,9 @@ int run_desktop_application(const char* executable_path) {
     Application app;
     app.executable = resolved ? resolved : executable_path;
     app.window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    app.player = gst_element_factory_make("playbin", "clearmic-ab-player");
     gtk_window_set_title(GTK_WINDOW(app.window), "ClearMic");
-    gtk_window_set_default_size(GTK_WINDOW(app.window), 520, 380);
+    gtk_window_set_default_size(GTK_WINDOW(app.window), 640, 520);
     gtk_container_set_border_width(GTK_CONTAINER(app.window), 24);
 
     auto* layout = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14);
@@ -325,6 +458,20 @@ int run_desktop_application(const char* executable_path) {
     gtk_box_pack_start(GTK_BOX(service_buttons), app.start_button, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(service_buttons), app.stop_button, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(layout), service_buttons, FALSE, FALSE, 0);
+    auto* comparison_label = make_label("A/B comparison · records five seconds when requested");
+    gtk_box_pack_start(GTK_BOX(layout), comparison_label, FALSE, FALSE, 0);
+    auto* comparison_buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    app.record_button = gtk_button_new_with_label("Record A/B sample");
+    app.play_original_button = gtk_button_new_with_label("Play original");
+    app.play_processed_button = gtk_button_new_with_label("Play processed");
+    app.stop_playback_button = gtk_button_new_with_label("Stop playback");
+    gtk_box_pack_start(GTK_BOX(comparison_buttons), app.record_button, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(comparison_buttons), app.play_original_button, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(layout), comparison_buttons, FALSE, FALSE, 0);
+    auto* playback_buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_box_pack_start(GTK_BOX(playback_buttons), app.play_processed_button, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(playback_buttons), app.stop_playback_button, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(layout), playback_buttons, FALSE, FALSE, 0);
     auto* note = make_label("Audio stays on this computer. Device selection is saved between launches.");
     gtk_label_set_line_wrap(GTK_LABEL(note), TRUE);
     gtk_box_pack_start(GTK_BOX(layout), note, FALSE, FALSE, 8);
@@ -335,6 +482,17 @@ int run_desktop_application(const char* executable_path) {
     g_signal_connect(app.refresh_button, "clicked", G_CALLBACK(on_refresh), &app);
     g_signal_connect(app.start_button, "clicked", G_CALLBACK(on_start), &app);
     g_signal_connect(app.stop_button, "clicked", G_CALLBACK(on_stop), &app);
+    g_signal_connect(app.record_button, "clicked", G_CALLBACK(on_record_sample), &app);
+    g_signal_connect(app.play_original_button, "clicked", G_CALLBACK(on_play_original), &app);
+    g_signal_connect(app.play_processed_button, "clicked", G_CALLBACK(on_play_processed), &app);
+    g_signal_connect(app.stop_playback_button, "clicked", G_CALLBACK(on_stop_playback), &app);
+    if (app.player) {
+        GstBus* bus = gst_element_get_bus(app.player);
+        app.player_bus_watch = gst_bus_add_watch(bus, on_player_message, &app);
+        gst_object_unref(bus);
+    } else {
+        gtk_label_set_text(GTK_LABEL(app.service_status), "A/B playback is unavailable because GStreamer playbin could not load.");
+    }
     const auto preset = stored_preset();
     const int preset_index = preset == "meeting" ? 1 : (preset == "strong" ? 2 : 0);
     gtk_combo_box_set_active(GTK_COMBO_BOX(app.preset), preset_index);
