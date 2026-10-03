@@ -270,11 +270,11 @@ void save_processing_settings(Application& app) {
     write_setting(app, L"processing", L"preset",
         selected_preset(app) == audio::Preset::meeting ? L"meeting" :
         (selected_preset(app) == audio::Preset::strong_noise_reduction ? L"strong" : L"natural"));
-    write_setting(app, L"processing", L"enhancement-enabled", settings.enhancement_enabled ? L"1" : L"0");
     write_setting(app, L"processing", L"noise-suppression", settings.noise_suppression_enabled ? L"1" : L"0");
     write_setting(app, L"processing", L"noise-gate", settings.noise_gate_enabled ? L"1" : L"0");
     write_setting(app, L"processing", L"automatic-gain", settings.automatic_gain_enabled ? L"1" : L"0");
     write_setting(app, L"processing", L"compressor", settings.compressor_enabled ? L"1" : L"0");
+    write_setting(app, L"processing", L"enhancement-enabled", settings.enhancement_enabled ? L"1" : L"0");
     write_integer_setting(app, L"input-gain-db", static_cast<int>(settings.input_gain_db));
 }
 
