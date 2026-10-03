@@ -12,7 +12,7 @@ jobs:
       - name: Configure
         run: cmake -S . -B build -A x64
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build build --config Release --verbose
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
       - name: Preserve Windows CLI for local hardware validation
@@ -31,6 +31,6 @@ jobs:
       - name: Configure
         run: cmake -S . -B build -G Ninja
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build build --config Release --verbose
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
