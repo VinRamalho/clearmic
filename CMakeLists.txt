@@ -106,7 +106,8 @@ elseif(UNIX AND NOT APPLE)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(PIPEWIRE REQUIRED IMPORTED_TARGET libpipewire-0.3)
     add_library(clearmic_platform audio-engine/platform/linux/src/device_manager.cpp
-        audio-engine/platform/linux/src/live_capture.cpp)
+        audio-engine/platform/linux/src/live_capture.cpp
+        audio-engine/platform/linux/src/realtime_microphone.cpp)
     target_include_directories(clearmic_platform PUBLIC audio-engine/platform/linux/include)
     target_link_libraries(clearmic_platform PUBLIC clearmic_core PkgConfig::PIPEWIRE)
 else()

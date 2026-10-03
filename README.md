@@ -4,7 +4,7 @@
 
 ClearMic is an open-source, cross-platform desktop application designed to improve microphone voice quality in real time.
 
-> **Development status:** the C++20 device model, Windows WASAPI and Linux PipeWire input enumeration backends, RNNoise WAV processing, and shared stateful DSP chain build on Windows and Ubuntu 24.04 in CI. Both platforms have a CLI-only `record-test` path that explicitly captures up to 30 seconds from an available microphone, processes the sample, and writes original/processed WAV files for manual comparison; Linux refuses to record when PipeWire reports no source. The DSP chain includes Natural, Meeting, and Strong Noise Reduction presets with noise suppression, optional gain, gate, compression, and AGC. Processing currently happens after this short capture completes; continuous live enhancement, desktop UI, battery telemetry, virtual microphone, persistent settings, and installers remain unimplemented. This is an early development project, not an installable product.
+> **Development status:** the C++20 device model, Windows WASAPI and Linux PipeWire input backends, shared stateful DSP chain, and CI builds for Windows and Ubuntu 24.04 are in place. Both platforms provide CLI `record-test` A/B capture. Linux also provides `serve`, which continuously captures from a PipeWire microphone, processes audio, and publishes a `ClearMic Virtual Microphone` source; stop it with Ctrl+C. The service and virtual source are not yet packaged as a desktop application, and Windows continuous routing, desktop UI, battery telemetry, persistent settings, and installers remain unimplemented. This is an early development project, not an installable product.
 
 It aims to reduce background noise, echo, room reverberation, and inconsistent microphone levels while preserving a natural-sounding voice.
 
@@ -116,8 +116,8 @@ ClearMic targets:
 
 | Platform | Audio Backend | Status |
 | --- | --- | --- |
-| Ubuntu / Linux | PipeWire | 🚧 Enumeration and bounded capture-test command build in CI; runtime microphone capture pending |
-| Windows 11 | WASAPI | 🚧 Enumeration and bounded capture-test command build in CI; runtime microphone capture pending |
+| Ubuntu / Linux | PipeWire | 🚧 Enumeration, bounded A/B capture, and real-time processing to a virtual source; desktop integration pending |
+| Windows 11 | WASAPI | 🚧 Enumeration and bounded A/B capture; continuous virtual microphone pending |
 
 Additional Linux distributions using PipeWire may work in the future.
 
@@ -379,6 +379,14 @@ Capture a five-second microphone test and save original and processed audio for 
 
 The optional final argument selects a discovered device ID. Without it, the platform default microphone is used. Linux requires an available PipeWire source; Windows uses WASAPI. Capture is limited to 30 seconds and audio is processed locally after recording.
 
+On Linux, run the continuous processor and expose its output to desktop applications as a virtual PipeWire microphone:
+
+```bash
+./build/clearmic-cli serve [pipewire-source-id]
+```
+
+Omit the optional source ID to use PipeWire's default microphone. Keep the process running while selecting **ClearMic Virtual Microphone** in the target application; press Ctrl+C to stop. Device reconnect and desktop controls are still in progress.
+
 Offline noise suppression for an existing WAV file:
 
 ```bash
@@ -472,14 +480,16 @@ After installation, ClearMic should be available from the desktop application me
 
 ### Phase 4 — Real-Time Processing
 
-- [ ] Real-time processing pipeline
+- [x] Linux PipeWire capture-to-processing pipeline
+- [x] Bounded capture/virtual-source audio queue
+- [ ] Windows real-time processing pipeline
 - [ ] Latency measurements
 - [ ] Buffer monitoring
 - [ ] Underrun / overrun diagnostics
 
 ### Phase 5 — Virtual Microphone
 
-- [ ] PipeWire virtual microphone
+- [x] PipeWire virtual microphone source (Linux development command)
 - [ ] Windows virtual microphone architecture
 - [ ] Application compatibility testing
 

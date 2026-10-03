@@ -2,7 +2,13 @@
 
 ## Linux
 
-PipeWire can expose virtual source nodes, but a usable ClearMic source must be fed processed PCM by the running application and survive session lifecycle changes. This is not implemented yet.
+The Linux CLI can publish a PipeWire source fed by the live processing chain:
+
+```bash
+./build/clearmic-cli serve [pipewire-source-id]
+```
+
+The command opens the selected microphone (or PipeWire's default source), processes mono 48 kHz PCM16 in the PipeWire capture callback, and publishes the result as **ClearMic Virtual Microphone**. The process must remain running. Ctrl+C stops it. A bounded single-producer/single-consumer queue separates the capture and source callbacks; if the consumer falls behind, old samples are discarded to keep latency bounded. Source disconnection currently stops the service with an error; automatic reconnect and runtime metrics are not implemented.
 
 ## Windows
 
@@ -10,4 +16,4 @@ WASAPI capture enumeration does not create a microphone endpoint. A virtual capt
 
 ## Current status
 
-No platform currently provides ClearMic Virtual Microphone. Device discovery and virtual output are separate capabilities; compiling discovery code will not be treated as proof of routing.
+Linux provides the source via the `serve` command. Windows still has no ClearMic virtual endpoint. PipeWire runtime verification with a physical microphone and consumer application remains outstanding on a native Linux desktop.

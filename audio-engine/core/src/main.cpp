@@ -24,11 +24,25 @@ void print_usage() {
 #if defined(__linux__) || defined(_WIN32)
                  "  clearmic-cli record-test <seconds> <original.wav> <processed.wav> [device-id]\n"
 #endif
+#ifdef __linux__
+                 "  clearmic-cli serve [device-id]\n"
+#endif
                  ;
 }
 }
 
 int main(const int argc, char** argv) {
+#ifdef __linux__
+    if ((argc == 2 || argc == 3) && std::string_view(argv[1]) == "serve") {
+        try {
+            clearmic::platform::pipewire::run_realtime_microphone(argc == 3 ? argv[2] : "");
+        } catch (const std::exception& error) {
+            std::cerr << "ClearMic audio service stopped: " << error.what() << "\n";
+            return 1;
+        }
+        return 0;
+    }
+#endif
 #if defined(__linux__) || defined(_WIN32)
     if ((argc == 5 || argc == 6) && std::string_view(argv[1]) == "record-test") {
         try {
