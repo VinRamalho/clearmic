@@ -21,7 +21,6 @@ struct Application {
     GtkWidget* refresh_button{};
     std::vector<audio::AudioDevice> inputs;
     GSubprocess* service{};
-    guint monitor{};
 };
 
 std::string settings_path() {
@@ -84,7 +83,7 @@ void update_device_status(Application& app) {
 }
 
 void update_controls(Application& app) {
-    const bool running = app.service && !g_subprocess_get_if_exited(app.service);
+    const bool running = app.service != nullptr;
     gtk_widget_set_sensitive(app.start_button, !running && selected_index(app) >= 0);
     gtk_widget_set_sensitive(app.stop_button, running);
 }
@@ -151,39 +150,32 @@ void on_start(GtkButton*, gpointer data) {
     gtk_label_set_text(GTK_LABEL(app.service_status), "Starting ClearMic virtual microphone…");
     gtk_widget_set_sensitive(app.devices, FALSE);
     update_controls(app);
+    g_subprocess_wait_check_async(app.service, nullptr,
+        [](GObject* source, GAsyncResult* result, gpointer user_data) {
+            auto& state = *static_cast<Application*>(user_data);
+            GError* wait_error = nullptr;
+            if (!g_subprocess_wait_check_finish(G_SUBPROCESS(source), result, &wait_error)) {
+                gtk_label_set_text(GTK_LABEL(state.service_status), wait_error ? wait_error->message : "Audio service stopped with an error.");
+                if (wait_error) g_error_free(wait_error);
+            } else {
+                gtk_label_set_text(GTK_LABEL(state.service_status), "Audio service stopped.");
+            }
+            g_clear_object(&state.service);
+            gtk_widget_set_sensitive(state.devices, TRUE);
+            refresh_devices(state);
+        }, &app);
 }
 
 void on_stop(GtkButton*, gpointer data) {
     auto& app = *static_cast<Application*>(data);
-    if (!app.service || g_subprocess_get_if_exited(app.service)) return;
+    if (!app.service) return;
     g_subprocess_send_signal(app.service, SIGTERM);
     gtk_label_set_text(GTK_LABEL(app.service_status), "Stopping audio service…");
 }
 
-gboolean monitor_service(gpointer data) {
-    auto& app = *static_cast<Application*>(data);
-    if (!app.service) return G_SOURCE_CONTINUE;
-    if (!g_subprocess_get_if_exited(app.service)) {
-        gtk_label_set_text(GTK_LABEL(app.service_status), "ClearMic service is running. Select ClearMic Virtual Microphone in your audio application.");
-        return G_SOURCE_CONTINUE;
-    }
-    GError* error = nullptr;
-    if (!g_subprocess_wait_check(app.service, nullptr, &error)) {
-        gtk_label_set_text(GTK_LABEL(app.service_status), error ? error->message : "Audio service stopped with an error.");
-        if (error) g_error_free(error);
-    } else {
-        gtk_label_set_text(GTK_LABEL(app.service_status), "Audio service stopped.");
-    }
-    g_clear_object(&app.service);
-    gtk_widget_set_sensitive(app.devices, TRUE);
-    refresh_devices(app);
-    return G_SOURCE_CONTINUE;
-}
-
 void on_window_destroy(GtkWidget*, gpointer data) {
     auto& app = *static_cast<Application*>(data);
-    if (app.monitor) g_source_remove(app.monitor);
-    if (app.service && !g_subprocess_get_if_exited(app.service)) {
+    if (app.service) {
         g_subprocess_send_signal(app.service, SIGTERM);
         g_subprocess_wait(app.service, nullptr, nullptr);
     }
@@ -245,7 +237,6 @@ int run_desktop_application(const char* executable_path) {
     g_signal_connect(app.refresh_button, "clicked", G_CALLBACK(on_refresh), &app);
     g_signal_connect(app.start_button, "clicked", G_CALLBACK(on_start), &app);
     g_signal_connect(app.stop_button, "clicked", G_CALLBACK(on_stop), &app);
-    app.monitor = g_timeout_add_seconds(1, monitor_service, &app);
     refresh_devices(app);
     gtk_widget_show_all(app.window);
     gtk_main();

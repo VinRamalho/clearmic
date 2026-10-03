@@ -27,7 +27,8 @@ void on_global(void* data, const std::uint32_t global_id, const std::uint32_t, c
     const char* name = spa_dict_lookup(properties, PW_KEY_NODE_DESCRIPTION);
     if (!name) name = spa_dict_lookup(properties, PW_KEY_NODE_NAME);
     audio::AudioDevice device;
-    device.id = std::to_string(global_id);
+    const char* serial = spa_dict_lookup(properties, PW_KEY_OBJECT_SERIAL);
+    device.id = serial ? serial : std::to_string(global_id);
     device.name = name ? name : "Unnamed PipeWire source";
     device.connection = audio::ConnectionState::connected;
     static_cast<Enumeration*>(data)->devices.push_back(std::move(device));
