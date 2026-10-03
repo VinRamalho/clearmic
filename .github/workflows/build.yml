@@ -15,6 +15,12 @@ jobs:
         run: cmake --build build --config Release
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+      - name: Preserve Windows CLI for local hardware validation
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: clearmic-windows-validation
+          path: build/Release/clearmic-cli.exe
+          retention-days: 3
 
   ubuntu:
     runs-on: ubuntu-24.04
