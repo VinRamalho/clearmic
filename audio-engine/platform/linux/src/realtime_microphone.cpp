@@ -101,7 +101,9 @@ const char* default_error_detail(const StreamError error) noexcept {
     case StreamError::invalid_capture_range: return "PipeWire capture buffer reported an invalid chunk range";
     case StreamError::unaligned_capture_chunk: return "PipeWire capture chunk is not aligned to PCM16 samples";
     case StreamError::oversized_capture_buffer:
-    case StreamError::oversized_source_buffer: return "PipeWire callback exceeded the preallocated audio buffer";
+        return "PipeWire microphone callback exceeded the preallocated audio buffer";
+    case StreamError::oversized_source_buffer:
+        return "PipeWire virtual microphone callback exceeded the preallocated audio buffer";
     case StreamError::unsupported_source_buffer:
         return "PipeWire virtual microphone returned an unsupported audio buffer";
     case StreamError::none:
@@ -354,7 +356,7 @@ void run_realtime_microphone(const std::string& device_id, const audio::Processi
     auto* source_props = pw_properties_new(PW_KEY_MEDIA_TYPE, "Audio", PW_KEY_MEDIA_CATEGORY, "Capture",
         PW_KEY_MEDIA_ROLE, "Communication", PW_KEY_MEDIA_CLASS, "Audio/Source",
         PW_KEY_NODE_NAME, "clearmic_virtual_microphone", PW_KEY_NODE_DESCRIPTION, "ClearMic Virtual Microphone",
-        PW_KEY_NODE_VIRTUAL, "true", PW_KEY_TARGET_OBJECT, PW_ID_ANY, PW_KEY_NODE_ALWAYS_PROCESS, "true", nullptr);
+        PW_KEY_NODE_VIRTUAL, "true", PW_KEY_NODE_ALWAYS_PROCESS, "true", nullptr);
     if (!source_props) throw std::runtime_error("Could not allocate PipeWire virtual source properties");
     create_stream(runtime.core, runtime.session, "ClearMic Virtual Microphone", source_props,
                   &runtime.session.source_listener, &source_events, &runtime.session.source);
