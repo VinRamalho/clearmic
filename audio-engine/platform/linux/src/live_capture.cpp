@@ -1,4 +1,5 @@
 #include "clearmic/platform/linux/device_manager.hpp"
+#include "clearmic/platform/linux/capture_buffer.hpp"
 
 #include "clearmic/audio/processor_chain.hpp"
 
@@ -8,6 +9,8 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <cstdint>
 #include <cstring>
 #include <limits>
 #include <memory>
@@ -17,6 +20,13 @@
 
 namespace clearmic::platform::pipewire {
 namespace {
+enum class CaptureCallbackError : std::uint8_t {
+    none,
+    unsupported_buffer,
+    invalid_chunk_range,
+    unaligned_chunk,
+};
+
 struct CaptureState {
     explicit CaptureState(const audio::ProcessingSettings settings) : processor(1, settings) {}
     pw_main_loop* loop{};
@@ -25,6 +35,7 @@ struct CaptureState {
     audio::PcmAudio processed{48000, 1, {}};
     std::size_t offset{};
     std::string error;
+    std::atomic<CaptureCallbackError> callback_error{CaptureCallbackError::none};
 };
 
 void on_state_changed(void* data, const pw_stream_state old_state, const pw_stream_state state,
@@ -55,13 +66,31 @@ void process_stream(void* data) {
     auto* spa_buffer = buffer->buffer;
     if (!spa_buffer || spa_buffer->n_datas == 0 || !spa_buffer->datas[0].data ||
         !spa_buffer->datas[0].chunk || spa_buffer->datas[0].chunk->stride != static_cast<int>(sizeof(std::int16_t))) {
-        state.capture.error = "PipeWire returned an unsupported audio buffer layout";
+        state.capture.callback_error.store(CaptureCallbackError::unsupported_buffer, std::memory_order_release);
         pw_stream_queue_buffer(state.stream, buffer);
         pw_main_loop_quit(state.capture.loop);
         return;
     }
 
     auto& data_buffer = spa_buffer->datas[0];
+    if (!valid_capture_chunk_range(data_buffer.chunk->offset, data_buffer.chunk->size, data_buffer.maxsize)) {
+        state.capture.callback_error.store(CaptureCallbackError::invalid_chunk_range, std::memory_order_release);
+        pw_stream_queue_buffer(state.stream, buffer);
+        pw_main_loop_quit(state.capture.loop);
+        return;
+    }
+    if (!aligned_pcm16_chunk(data_buffer.chunk->offset, data_buffer.chunk->size)) {
+        state.capture.callback_error.store(CaptureCallbackError::unaligned_chunk, std::memory_order_release);
+        pw_stream_queue_buffer(state.stream, buffer);
+        pw_main_loop_quit(state.capture.loop);
+        return;
+    }
+    if (state.capture.offset > state.capture.original.samples.size()) {
+        state.capture.callback_error.store(CaptureCallbackError::invalid_chunk_range, std::memory_order_release);
+        pw_stream_queue_buffer(state.stream, buffer);
+        pw_main_loop_quit(state.capture.loop);
+        return;
+    }
     const auto available_samples = data_buffer.chunk->size / sizeof(std::int16_t);
     const auto remaining = state.capture.original.samples.size() - state.capture.offset;
     const auto sample_count = std::min<std::size_t>(available_samples, remaining);
@@ -151,6 +180,16 @@ audio::AudioComparison capture_processed_audio(const std::string& device_id, con
 
     pw_main_loop_run(runtime.loop);
     if (!state.capture.error.empty()) throw std::runtime_error(state.capture.error);
+    switch (state.capture.callback_error.load(std::memory_order_acquire)) {
+    case CaptureCallbackError::unsupported_buffer:
+        throw std::runtime_error("PipeWire returned an unsupported audio buffer layout");
+    case CaptureCallbackError::invalid_chunk_range:
+        throw std::runtime_error("PipeWire reported an invalid microphone buffer range");
+    case CaptureCallbackError::unaligned_chunk:
+        throw std::runtime_error("PipeWire microphone buffer is not aligned to PCM16 samples");
+    case CaptureCallbackError::none:
+        break;
+    }
     if (state.capture.offset != sample_count) throw std::runtime_error("Microphone disconnected before the test recording completed");
     return audio::AudioComparison{std::move(state.capture.original), std::move(state.capture.processed)};
 }
