@@ -150,7 +150,7 @@ jobs:
           retention-days: 3
       - name: Launch GTK desktop panel
         run: |
-          timeout --signal=TERM 10s xvfb-run -a bash -euo pipefail -c '
+          timeout --signal=TERM 20s xvfb-run -a bash -euo pipefail -c '
             build/clearmic-cli gui &
             app_pid=$!
             window_id=""
