@@ -18,7 +18,7 @@ Run `clearmic-cli devices`, then `clearmic-cli record-test 5 original.wav proces
 
 ## Callback CPU diagnostics
 
-The Linux live-route diagnostics show both maximum elapsed DSP callback time and peak CPU time consumed by that callback thread while processing. Elapsed time reflects scheduling delays and the real-time deadline; thread CPU time separates actual processing work from time the callback thread was descheduled.
+The Linux live-route diagnostics show both maximum elapsed DSP callback time and peak CPU time consumed by that callback thread while processing. Elapsed time reflects scheduling delays and the real-time deadline; thread CPU time separates actual processing work from time the callback thread was descheduled. The desktop panel parses all twelve fields emitted by the service, with regression coverage for complete records, unavailable timing values, and truncated output.
 
 ## Not implemented yet
 

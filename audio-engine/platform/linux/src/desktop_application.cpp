@@ -1,4 +1,5 @@
 #include "clearmic/platform/linux/device_manager.hpp"
+#include "clearmic/platform/linux/service_diagnostics.hpp"
 #include "clearmic/audio/processing.hpp"
 #include "clearmic/audio/wav.hpp"
 
@@ -556,35 +557,24 @@ void read_service_output(GObject* source, GAsyncResult* result, gpointer user_da
             std::snprintf(text, sizeof(text), "Processed %.0f%%", output * 100.0F);
             gtk_progress_bar_set_text(GTK_PROGRESS_BAR(app.output_meter), text);
         } else {
-            float max_dsp_ms = 0.0F;
-            float max_dsp_budget = 0.0F;
-            float max_dsp_thread_cpu_ms = 0.0F;
-            unsigned long long overruns = 0;
-            unsigned long long underruns = 0;
-            unsigned long long processed_seconds = 0;
-            float capture_graph_ms = 0.0F;
-            float capture_queue_ms = 0.0F;
-            float capture_buffered_ms = 0.0F;
-            float source_graph_ms = 0.0F;
-            float source_queue_ms = 0.0F;
-            float source_buffered_ms = 0.0F;
-            if (std::sscanf(line, "DIAG %f %f %f %llu %llu %llu %f %f %f %f %f %f",
-                            &max_dsp_ms, &max_dsp_budget, &max_dsp_thread_cpu_ms,
-                            &overruns, &underruns, &processed_seconds,
-                            &capture_graph_ms, &capture_queue_ms, &capture_buffered_ms,
-                            &source_graph_ms, &source_queue_ms, &source_buffered_ms) == 11) {
+            ServiceDiagnostics diagnostics;
+            if (parse_service_diagnostics(line, diagnostics)) {
                 char text[512];
-                const bool complete_latency = capture_graph_ms >= 0.0F && capture_queue_ms >= 0.0F && capture_buffered_ms >= 0.0F &&
-                    source_graph_ms >= 0.0F && source_queue_ms >= 0.0F && source_buffered_ms >= 0.0F;
+                const bool complete_latency = diagnostics.capture_graph_ms >= 0.0F && diagnostics.capture_queue_ms >= 0.0F &&
+                    diagnostics.capture_buffered_ms >= 0.0F && diagnostics.source_graph_ms >= 0.0F &&
+                    diagnostics.source_queue_ms >= 0.0F && diagnostics.source_buffered_ms >= 0.0F;
                 if (complete_latency) {
                     std::snprintf(text, sizeof(text),
                         "DSP max %.3f ms (%.1f%% budget; thread CPU peak %.3f ms) · PipeWire reported delay capture %.2f + %.2f + %.2f; source %.2f + %.2f + %.2f ms · processed %llu s · overruns %llu/%llu",
-                        max_dsp_ms, max_dsp_budget, max_dsp_thread_cpu_ms, capture_graph_ms, capture_queue_ms, capture_buffered_ms,
-                        source_graph_ms, source_queue_ms, source_buffered_ms, processed_seconds, overruns, underruns);
+                        diagnostics.max_dsp_ms, diagnostics.max_dsp_budget_percent, diagnostics.max_dsp_thread_cpu_ms,
+                        diagnostics.capture_graph_ms, diagnostics.capture_queue_ms, diagnostics.capture_buffered_ms,
+                        diagnostics.source_graph_ms, diagnostics.source_queue_ms, diagnostics.source_buffered_ms,
+                        diagnostics.processed_seconds, diagnostics.capture_overruns, diagnostics.source_underruns);
                 } else {
                     std::snprintf(text, sizeof(text),
                         "DSP max %.3f ms (%.1f%% budget; thread CPU peak %.3f ms) · PipeWire route latency unavailable · processed %llu s · overruns %llu/%llu",
-                        max_dsp_ms, max_dsp_budget, max_dsp_thread_cpu_ms, processed_seconds, overruns, underruns);
+                        diagnostics.max_dsp_ms, diagnostics.max_dsp_budget_percent, diagnostics.max_dsp_thread_cpu_ms,
+                        diagnostics.processed_seconds, diagnostics.capture_overruns, diagnostics.source_underruns);
                 }
                 gtk_label_set_text(GTK_LABEL(app.service_status), text);
             }

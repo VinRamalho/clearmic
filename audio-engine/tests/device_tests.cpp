@@ -12,6 +12,9 @@
 
 void run_wav_tests();
 void run_processor_chain_tests();
+#ifdef __linux__
+void run_linux_diagnostics_tests();
+#endif
 
 int main() {
     using namespace clearmic::audio;
@@ -77,6 +80,9 @@ int main() {
     try {
         run_wav_tests();
         run_processor_chain_tests();
+#ifdef __linux__
+        run_linux_diagnostics_tests();
+#endif
     } catch (const std::exception& error) {
         const std::string message = "ClearMic test failure: " + std::string(error.what());
         std::cerr << message << '\n';
