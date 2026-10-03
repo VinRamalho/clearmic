@@ -14,7 +14,19 @@ The command opens the selected microphone (or PipeWire's default source), proces
 
 ## Windows
 
-WASAPI capture enumeration does not create a microphone endpoint. The current Windows panel discovers active endpoints and supports local A/B recording/playback, but it does not publish processed PCM as a Windows microphone. Microsoft's [SYSVAD sample](https://learn.microsoft.com/en-us/samples/microsoft/windows-driver-samples/sysvad-virtual-audio-device-driver-sample/) demonstrates a WDM virtual audio device driver. Microsoft documents that 64-bit kernel drivers must be signed and that public driver distribution uses its Hardware Developer Center signing process ([driver signing](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/driver-signing), [public release signing](https://learn.microsoft.com/en-us/windows-hardware/drivers/develop/signing-a-driver-for-public-release)). ClearMic has not installed a driver or exposed a virtual microphone; the MSI must not imply otherwise. The app still needs a maintainable virtual endpoint strategy and signed-driver release path.
+WASAPI capture enumeration does not create a microphone endpoint. WASAPI loopback captures rendered system audio, so it is useful as a possible AEC reference but cannot make ClearMic's processed microphone selectable by other applications ([Microsoft loopback recording](https://learn.microsoft.com/en-us/windows/win32/coreaudio/loopback-recording)).
+
+The current Windows panel discovers active endpoints and supports local A/B recording/playback, but it does not publish processed PCM as a Windows microphone. Microsoft's [SYSVAD sample](https://learn.microsoft.com/en-us/samples/microsoft/windows-driver-samples/sysvad-virtual-audio-device-driver-sample/) demonstrates a WDM virtual audio device driver. A user-mode APO can process streams in the Windows audio engine, but it is packaged and registered with an audio driver and does not independently create the virtual capture endpoint ([APO architecture](https://learn.microsoft.com/en-us/windows-hardware/drivers/audio/audio-processing-object-architecture)).
+
+Any public Windows implementation therefore needs a virtual capture endpoint (or a licensed, redistributable third-party endpoint), a documented installation and update path, and a signed driver package where a kernel driver is used ([driver signing](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/driver-signing), [public release signing](https://learn.microsoft.com/en-us/windows-hardware/drivers/develop/signing-a-driver-for-public-release)). The repository has not selected a driver source or redistribution license. ClearMic has not installed a driver or exposed a Windows virtual microphone; the MSI must not imply otherwise.
+
+### Implementation paths to evaluate
+
+- Adapt the Microsoft SYSVAD sample and maintain a ClearMic virtual capture driver. This offers control over the endpoint and format negotiation, but creates ongoing kernel-driver maintenance, signing, release, and Windows-version compatibility work.
+- Integrate a third-party virtual audio driver only after confirming its license permits redistribution, installation, updates, and the intended commercial/open-source use. A technical sample or source-available driver is not automatically safe to bundle.
+- Keep a user-mode APO as a possible later effect path if ClearMic needs to process audio in the Windows system pipeline. An APO alone does not provide the virtual microphone endpoint.
+
+The next Windows architecture milestone is to compare candidate driver implementations and their redistribution/signing requirements, then build a minimal endpoint prototype and verify that a separate capture application can enumerate and receive audio from it. Until a candidate and its licensing path are established, the project will not bundle a driver or present the Windows MSI as providing a virtual microphone.
 
 ## Current status
 

@@ -4,7 +4,7 @@ ClearMic uses a C++20 core shared by Windows and Linux. The common `AudioDevice`
 
 `IAudioDeviceManager` is the platform boundary. Windows enumerates active capture endpoints through Core Audio/WASAPI. Linux enumerates PipeWire `Audio/Source` nodes. The CLI presents this data without a desktop shell. Linux also provides a persistent PipeWire command that connects an input stream, the shared DSP chain, and a virtual `Audio/Source` stream.
 
-The processing engine consumes and produces platform-independent PCM frames. Capture/output callbacks must not perform file I/O, logging, or blocking UI work. The Linux service uses a bounded single-producer/single-consumer PCM ring between PipeWire capture and virtual-source callbacks. Windows has a native desktop shell and bounded WASAPI capture, but continuous processed audio routing to a Windows virtual microphone remains future work.
+The processing engine consumes and produces platform-independent PCM frames. Capture/output callbacks must not perform file I/O, logging, or blocking UI work. The Linux service uses a bounded single-producer/single-consumer PCM ring between PipeWire capture and virtual-source callbacks. Windows has a native desktop shell and bounded WASAPI capture, but continuous processed audio routing to a Windows virtual microphone remains future work. WASAPI loopback can supply rendered audio as a possible AEC reference, but it is a playback capture path and does not publish a microphone endpoint. The Windows virtual endpoint and any driver/APO packaging strategy remain unselected; see [Virtual microphone](virtual-microphone.md).
 
 ## Current scope
 
