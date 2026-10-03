@@ -365,10 +365,10 @@ void run_realtime_microphone(const std::string& device_id, const audio::Processi
     create_stream(runtime.core, runtime.session, "ClearMic Virtual Microphone", source_props,
                   &runtime.session.source_listener, &source_events, &runtime.session.source);
     connect_audio(runtime.session.capture, PW_DIRECTION_INPUT, device_id.empty() ? nullptr : device_id.c_str());
-    // The source is its own graph driver so its output callback runs for linked consumers.
+    // Let the PipeWire graph driver schedule the virtual source alongside the selected capture node.
     connect_audio(runtime.session.source, PW_DIRECTION_OUTPUT, nullptr,
         static_cast<pw_stream_flags>(PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_MAP_BUFFERS |
-                                     PW_STREAM_FLAG_DRIVER | PW_STREAM_FLAG_RT_PROCESS));
+                                     PW_STREAM_FLAG_RT_PROCESS));
 
     const auto previous_int = std::signal(SIGINT, handle_signal);
     const auto previous_term = std::signal(SIGTERM, handle_signal);
