@@ -4,7 +4,7 @@
 
 ClearMic is an open-source, cross-platform desktop application designed to improve microphone voice quality in real time.
 
-> **Development status:** the C++20 device model, Windows WASAPI and Linux PipeWire input enumeration backends, CLI, and RNNoise WAV processing path build on Windows and Ubuntu 24.04 in CI. The offline processor accepts 48 kHz, 16-bit PCM WAV with one or two channels. Local device enumeration has not yet been run through the ClearMic binary. Live capture and processing, the desktop UI, battery telemetry, virtual microphone, settings, and installers remain unimplemented. This is an early development project, not an installable product.
+> **Development status:** the C++20 device model, Windows WASAPI and Linux PipeWire input enumeration backends, CLI, RNNoise WAV processing, and shared stateful DSP chain build on Windows and Ubuntu 24.04 in CI. The DSP chain includes Natural, Meeting, and Strong Noise Reduction presets with noise suppression, optional gain, gate, compression, and AGC. Device capture is not connected to the DSP yet. Local device enumeration has not yet been run through the ClearMic binary. The desktop UI, battery telemetry, virtual microphone, settings, and installers remain unimplemented. This is an early development project, not an installable product.
 
 It aims to reduce background noise, echo, room reverberation, and inconsistent microphone levels while preserving a natural-sounding voice.
 

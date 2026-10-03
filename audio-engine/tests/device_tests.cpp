@@ -7,6 +7,7 @@
 #include <string>
 
 void run_wav_tests();
+void run_processor_chain_tests();
 
 int main() {
     using namespace clearmic::audio;
@@ -21,6 +22,7 @@ int main() {
     if (is_valid_battery_percentage(101)) return 6;
     try {
         run_wav_tests();
+        run_processor_chain_tests();
     } catch (const std::exception& error) {
         const std::string message = "ClearMic test failure: " + std::string(error.what());
         std::cerr << message << '\n';

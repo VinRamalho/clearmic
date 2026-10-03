@@ -91,6 +91,7 @@ add_library(clearmic_core
     audio-engine/core/src/device.cpp
     audio-engine/core/src/noise_suppressor.cpp
     audio-engine/core/src/processing.cpp
+    audio-engine/core/src/processor_chain.cpp
     audio-engine/core/src/wav.cpp)
 target_include_directories(clearmic_core PUBLIC audio-engine/core/include)
 target_link_libraries(clearmic_core PRIVATE rnnoise)
@@ -115,7 +116,8 @@ target_link_libraries(clearmic-cli PRIVATE clearmic_core clearmic_platform)
 
 include(CTest)
 if(BUILD_TESTING)
-    add_executable(clearmic-core-tests audio-engine/tests/device_tests.cpp audio-engine/tests/wav_tests.cpp)
+    add_executable(clearmic-core-tests audio-engine/tests/device_tests.cpp audio-engine/tests/wav_tests.cpp
+        audio-engine/tests/processor_chain_tests.cpp)
     target_link_libraries(clearmic-core-tests PRIVATE clearmic_core)
     add_test(NAME clearmic-core-tests COMMAND clearmic-core-tests)
 endif()
