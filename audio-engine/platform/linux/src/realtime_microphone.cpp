@@ -10,11 +10,13 @@
 #include <array>
 #include <atomic>
 #include <csignal>
+#include <chrono>
 #include <cstdint>
+#include <iostream>
 #include <span>
 #include <stdexcept>
 #include <string>
-#include <vector>
+#include <thread>
 
 namespace clearmic::platform::pipewire {
 namespace {
@@ -27,28 +29,30 @@ struct AudioRing {
     std::atomic<std::uint64_t> write_index{};
     std::atomic<std::uint64_t> read_index{};
 
-    void push(const std::int16_t* input, std::size_t count) noexcept {
+    bool push(const std::int16_t* input, std::size_t count) noexcept {
         auto write = write_index.load(std::memory_order_relaxed);
         auto read = read_index.load(std::memory_order_acquire);
         if (count > ring_capacity) {
             input += count - ring_capacity;
             count = ring_capacity;
         }
-        if (write + count - read > ring_capacity) {
+        const bool overflow = write + count - read > ring_capacity;
+        if (overflow) {
             const auto drop = write + count - read - ring_capacity;
             read_index.store(read + drop, std::memory_order_release);
         }
         for (std::size_t i = 0; i < count; ++i) samples[(write + i) & (ring_capacity - 1U)] = input[i];
         write_index.store(write + count, std::memory_order_release);
+        return overflow;
     }
 
-    std::size_t pop(std::int16_t* output, std::size_t count) noexcept {
+    std::size_t pop(std::int16_t* output, std::size_t count, const std::int16_t* silence) noexcept {
         const auto read = read_index.load(std::memory_order_relaxed);
         const auto write = write_index.load(std::memory_order_acquire);
         const auto available = static_cast<std::size_t>(std::min<std::uint64_t>(write - read, count));
         for (std::size_t i = 0; i < available; ++i) output[i] = samples[(read + i) & (ring_capacity - 1U)];
         read_index.store(read + available, std::memory_order_release);
-        std::fill(output + available, output + count, 0);
+        std::copy_n(silence, count - available, output + available);
         return available;
     }
 };
@@ -57,7 +61,11 @@ struct Session {
     pw_main_loop* loop{};
     audio::ProcessorChain processor{1};
     AudioRing ring;
-    std::vector<std::int16_t> callback_output;
+    std::array<std::int16_t, 8192> callback_output{};
+    std::array<std::int16_t, 8192> source_silence{};
+    std::atomic<std::uint64_t> capture_overruns{};
+    std::atomic<std::uint64_t> source_underruns{};
+    std::atomic<std::uint64_t> processed_samples{};
     pw_stream* capture{};
     pw_stream* source{};
     spa_hook capture_listener{};
@@ -92,16 +100,24 @@ void capture_process(void* data) {
     }
     auto& d = b->datas[0];
     const auto count = d.chunk->size / sizeof(std::int16_t);
+    if (d.chunk->offset > d.maxsize || d.chunk->size > d.maxsize - d.chunk->offset) {
+        session.error = "PipeWire capture buffer reported an invalid chunk range";
+        pw_stream_queue_buffer(session.capture, buffer);
+        pw_main_loop_quit(session.loop);
+        return;
+    }
     const auto* input = reinterpret_cast<const std::int16_t*>(static_cast<const std::byte*>(d.data) + d.chunk->offset);
     // PipeWire callback buffers are bounded; storage is preallocated before streaming.
-    if (session.callback_output.size() < count) {
+    if (count > session.callback_output.size()) {
         session.error = "PipeWire callback exceeded the preallocated audio buffer";
         pw_stream_queue_buffer(session.capture, buffer);
         pw_main_loop_quit(session.loop);
         return;
     }
     session.processor.process(std::span<const std::int16_t>(input, count), std::span<std::int16_t>(session.callback_output).first(count));
-    session.ring.push(session.callback_output.data(), count);
+    if (session.ring.push(session.callback_output.data(), count))
+        session.capture_overruns.fetch_add(1, std::memory_order_relaxed);
+    session.processed_samples.fetch_add(count, std::memory_order_relaxed);
     pw_stream_queue_buffer(session.capture, buffer);
 }
 
@@ -118,8 +134,15 @@ void source_process(void* data) {
     }
     auto& d = b->datas[0];
     const auto capacity = d.maxsize / sizeof(std::int16_t);
+    if (capacity > session.source_silence.size()) {
+        session.error = "PipeWire source callback exceeded the preallocated audio buffer";
+        pw_stream_queue_buffer(session.source, buffer);
+        pw_main_loop_quit(session.loop);
+        return;
+    }
     auto* output = static_cast<std::int16_t*>(d.data);
-    session.ring.pop(output, capacity);
+    if (session.ring.pop(output, capacity, session.source_silence.data()) < capacity)
+        session.source_underruns.fetch_add(1, std::memory_order_relaxed);
     d.chunk->offset = 0;
     d.chunk->stride = sizeof(std::int16_t);
     d.chunk->size = static_cast<std::uint32_t>(capacity * sizeof(std::int16_t));
@@ -153,7 +176,7 @@ pw_stream* create_stream(pw_core* core, Session& session, const char* name, pw_p
     return *out;
 }
 
-void connect_audio(pw_stream* stream, const pw_direction direction) {
+void connect_audio(pw_stream* stream, const pw_direction direction, const char* target = nullptr) {
     spa_audio_info_raw format{};
     format.format = SPA_AUDIO_FORMAT_S16_LE;
     format.rate = 48000;
@@ -162,7 +185,10 @@ void connect_audio(pw_stream* stream, const pw_direction direction) {
     spa_pod_builder builder = SPA_POD_BUILDER_INIT(storage.data(), storage.size());
     const spa_pod* params[] = {spa_format_audio_raw_build(&builder, SPA_PARAM_EnumFormat, &format)};
     const auto flags = static_cast<pw_stream_flags>(PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_MAP_BUFFERS | PW_STREAM_FLAG_RT_PROCESS);
-    const auto result = pw_stream_connect(stream, direction, PW_ID_ANY, flags, params, 1);
+    std::uint32_t target_id = PW_ID_ANY;
+    if (target && pw_properties_set(const_cast<pw_properties*>(pw_stream_get_properties(stream)), PW_KEY_TARGET_OBJECT, target) < 0)
+        throw std::runtime_error("Could not set the selected PipeWire microphone target");
+    const auto result = pw_stream_connect(stream, direction, target_id, flags, params, 1);
     if (result < 0) throw std::runtime_error("Could not connect a ClearMic PipeWire audio stream");
 }
 }
@@ -179,7 +205,6 @@ void run_realtime_microphone(const std::string& device_id) {
     runtime.loop = pw_main_loop_new(nullptr);
     if (!runtime.loop) throw std::runtime_error("Could not create PipeWire main loop");
     runtime.session.loop = runtime.loop;
-    runtime.session.callback_output.resize(8192);
     runtime.context = pw_context_new(pw_main_loop_get_loop(runtime.loop), nullptr, 0);
     if (!runtime.context) throw std::runtime_error("Could not create PipeWire context");
     runtime.core = pw_context_connect(runtime.context, nullptr, 0);
@@ -199,13 +224,27 @@ void run_realtime_microphone(const std::string& device_id) {
     if (!source_props) throw std::runtime_error("Could not allocate PipeWire virtual source properties");
     create_stream(runtime.core, runtime.session, "ClearMic Virtual Microphone", source_props,
                   &runtime.session.source_listener, &source_events, &runtime.session.source);
-    connect_audio(runtime.session.capture, PW_DIRECTION_INPUT);
+    connect_audio(runtime.session.capture, PW_DIRECTION_INPUT, device_id.empty() ? nullptr : device_id.c_str());
     connect_audio(runtime.session.source, PW_DIRECTION_OUTPUT);
 
     const auto previous_int = std::signal(SIGINT, handle_signal);
     const auto previous_term = std::signal(SIGTERM, handle_signal);
     active_loop.store(runtime.loop, std::memory_order_relaxed);
+    std::jthread diagnostics([&](std::stop_token stop) {
+        std::uint64_t last_processed = 0;
+        while (!stop.stop_requested()) {
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+            const auto processed = runtime.session.processed_samples.load(std::memory_order_relaxed);
+            const auto overruns = runtime.session.capture_overruns.load(std::memory_order_relaxed);
+            const auto underruns = runtime.session.source_underruns.load(std::memory_order_relaxed);
+            if (processed == last_processed && overruns == 0 && underruns == 0) continue;
+            std::clog << "ClearMic metrics: processed=" << processed / 48000 << "s"
+                      << " capture_overruns=" << overruns << " source_underruns=" << underruns << '\n';
+            last_processed = processed;
+        }
+    });
     pw_main_loop_run(runtime.loop);
+    diagnostics.request_stop();
     active_loop.store(nullptr, std::memory_order_relaxed);
     std::signal(SIGINT, previous_int);
     std::signal(SIGTERM, previous_term);
