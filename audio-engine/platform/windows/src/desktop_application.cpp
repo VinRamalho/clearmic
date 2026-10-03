@@ -4,6 +4,7 @@
 
 #include <windows.h>
 #include <commctrl.h>
+#include <shellapi.h>
 #include <shlobj.h>
 #include <mmsystem.h>
 
@@ -47,6 +48,11 @@ constexpr int render_output_combo = 120;
 constexpr int live_route_button = 121;
 constexpr UINT live_route_complete_message = WM_APP + 2;
 constexpr UINT live_route_started_message = WM_APP + 3;
+constexpr UINT tray_callback_message = WM_APP + 4;
+constexpr int tray_open_command = 201;
+constexpr int tray_route_command = 202;
+constexpr int tray_quit_command = 203;
+constexpr UINT tray_icon_id = 1;
 
 struct RecordCompletion {
     bool success{};
@@ -97,7 +103,63 @@ struct Application {
     bool live_routing{};
     bool refreshing_devices{};
     bool samples_ready{};
+    bool tray_icon_added{};
 };
+
+void toggle_live_route(Application& app);
+
+void show_window(Application& app) {
+    ShowWindow(app.window, SW_SHOW);
+    ShowWindow(app.window, SW_RESTORE);
+    SetForegroundWindow(app.window);
+}
+
+void add_tray_icon(Application& app) {
+    NOTIFYICONDATAW icon{};
+    icon.cbSize = sizeof(icon);
+    icon.hWnd = app.window;
+    icon.uID = tray_icon_id;
+    icon.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+    icon.uCallbackMessage = tray_callback_message;
+    icon.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    lstrcpynW(icon.szTip, L"ClearMic", static_cast<int>(std::size(icon.szTip)));
+    app.tray_icon_added = Shell_NotifyIconW(NIM_ADD, &icon) != FALSE;
+}
+
+void remove_tray_icon(Application& app) {
+    if (!app.tray_icon_added) return;
+    NOTIFYICONDATAW icon{};
+    icon.cbSize = sizeof(icon);
+    icon.hWnd = app.window;
+    icon.uID = tray_icon_id;
+    Shell_NotifyIconW(NIM_DELETE, &icon);
+    app.tray_icon_added = false;
+}
+
+void show_tray_menu(Application& app) {
+    HMENU menu = CreatePopupMenu();
+    if (!menu) return;
+    AppendMenuW(menu, MF_STRING, tray_open_command, L"Open ClearMic");
+    AppendMenuW(menu, MF_STRING, tray_route_command,
+                app.live_routing ? L"Stop live processing" : L"Start live processing");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING, tray_quit_command, L"Quit ClearMic");
+    POINT cursor{};
+    GetCursorPos(&cursor);
+    SetForegroundWindow(app.window);
+    const UINT command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
+                                        cursor.x, cursor.y, 0, app.window, nullptr);
+    DestroyMenu(menu);
+    PostMessageW(app.window, WM_NULL, 0, 0);
+    if (command == tray_open_command) {
+        show_window(app);
+    } else if (command == tray_route_command) {
+        toggle_live_route(app);
+        if (!app.live_routing) show_window(app);
+    } else if (command == tray_quit_command) {
+        SendMessageW(app.window, WM_CLOSE, 1, 0);
+    }
+}
 
 std::wstring known_folder(const KNOWNFOLDERID& folder) {
     PWSTR raw_path = nullptr;
@@ -605,9 +667,16 @@ LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPAR
         SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(app));
     }
     if (!app) return DefWindowProcW(window, message, wparam, lparam);
+    static const UINT taskbar_created_message = RegisterWindowMessageW(L"TaskbarCreated");
+    if (message == taskbar_created_message) {
+        app->tray_icon_added = false;
+        add_tray_icon(*app);
+        return 0;
+    }
     switch (message) {
     case WM_CREATE:
         initialize_controls(*app);
+        add_tray_icon(*app);
         return 0;
     case WM_TIMER:
         if (wparam == 1) refresh_devices(*app);
@@ -719,6 +788,11 @@ LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPAR
                 L"Live microphone processing is active. Voice apps must select the paired virtual microphone endpoint.");
         return 0;
     case WM_CLOSE:
+        if (app->live_routing && app->tray_icon_added && wparam == 0) {
+            ShowWindow(window, SW_HIDE);
+            SetWindowTextW(app->status, L"ClearMic is processing in the system tray.");
+            return 0;
+        }
         app->shutting_down.store(true, std::memory_order_relaxed);
         app->stop_live_route.store(true, std::memory_order_relaxed);
         if (app->live_route_thread.joinable()) app->live_route_thread.join();
@@ -726,6 +800,7 @@ LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPAR
         PlaySoundW(nullptr, nullptr, 0);
         KillTimer(window, 1);
         KillTimer(window, 2);
+        remove_tray_icon(*app);
         DestroyWindow(window);
         return 0;
     case WM_DESTROY:
@@ -733,6 +808,11 @@ LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPAR
         return 0;
     default:
         break;
+    }
+    if (message == tray_callback_message && app->tray_icon_added) {
+        if (lparam == WM_LBUTTONUP) show_window(*app);
+        else if (lparam == WM_RBUTTONUP) show_tray_menu(*app);
+        return 0;
     }
     return DefWindowProcW(window, message, wparam, lparam);
 }

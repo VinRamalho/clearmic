@@ -4,7 +4,7 @@
 
 ClearMic is an open-source, cross-platform desktop application designed to improve microphone voice quality in real time.
 
-> **Development status:** the C++20 device model, Windows WASAPI and Linux PipeWire audio backends, shared stateful DSP chain, and CI builds for Windows and Ubuntu 24.04 are in place. Both platforms provide CLI `record-test` A/B capture. Linux has a GTK panel to discover/select a PipeWire microphone, persist settings, start/stop the `ClearMic Virtual Microphone` service, view live input/output RMS meters, record and compare samples, refresh devices while idle, recover from service failures, and optionally run in the system tray. Windows has a native panel for WASAPI input and playback endpoint selection, persistent processing controls, A/B capture/playback, live input/output meters during continuous routing, and start/stop controls for processing into a selected playback endpoint. Using that stream as a microphone still requires a separately installed compatible virtual audio cable; the MSI does not install a driver, and native cable routing remains unverified. Linux reads Bluetooth battery percentages from BlueZ when available; Windows and the tested USB receiver do not currently provide battery telemetry. The CPack/WiX MSI passes CI installation, launch, and removal checks. Native audio quality and latency validation remain incomplete. The Ubuntu `.deb` includes the GUI. This is an early development project, not a finished product.
+> **Development status:** the C++20 device model, Windows WASAPI and Linux PipeWire audio backends, shared stateful DSP chain, and CI builds for Windows and Ubuntu 24.04 are in place. Both platforms provide CLI `record-test` A/B capture. Linux has a GTK panel to discover/select a PipeWire microphone, persist settings, start/stop the `ClearMic Virtual Microphone` service, view live input/output RMS meters, record and compare samples, refresh devices while idle, recover from service failures, and optionally run in the system tray. Windows has a native panel for WASAPI input and playback endpoint selection, persistent processing controls, A/B capture/playback, live input/output meters during continuous routing, and start/stop controls for processing into a selected playback endpoint. While that route is active, the Windows window can close to the system tray, where ClearMic can reopen the panel, stop routing, or quit. Using the processed stream as a microphone still requires a separately installed compatible virtual audio cable; the MSI does not install a driver, and native cable routing remains unverified. Linux reads Bluetooth battery percentages from BlueZ when available; Windows and the tested USB receiver do not currently provide battery telemetry. The CPack/WiX MSI passes CI installation, launch, and removal checks. Native audio quality and latency validation remain incomplete. The Ubuntu `.deb` includes the GUI. This is an early development project, not a finished product.
 
 It currently targets background noise and inconsistent microphone levels while preserving a natural-sounding voice. Acoustic echo cancellation and room reverberation reduction are not implemented.
 
@@ -119,7 +119,7 @@ ClearMic targets:
 | Platform | Audio Backend | Status |
 | --- | --- | --- |
 | Ubuntu / Linux | PipeWire | 🚧 GTK desktop panel, device monitoring, presets/controls, A/B capture/playback, live service, and virtual source; native hardware quality validation pending |
-| Windows 11 | WASAPI | 🚧 Native desktop panel, device monitoring, saved DSP controls, A/B capture/playback, continuous processing to an explicitly selected render endpoint, and CI-verified MSI lifecycle; virtual microphone still requires a separate cable |
+| Windows 11 | WASAPI | 🚧 Native desktop panel, device monitoring, saved DSP controls, A/B capture/playback, continuous processing to an explicitly selected render endpoint, tray operation during live routing, and CI-verified MSI lifecycle; virtual microphone still requires a separate cable |
 
 Additional Linux distributions using PipeWire may work in the future.
 
@@ -284,7 +284,7 @@ The current architecture targets:
 
 ### Desktop UI
 
-Linux uses a GTK 3 desktop panel and Windows uses a native Win32 panel. Windows can route live processed audio to an explicitly selected playback endpoint, with a separately installed virtual cable required to expose the audio as a microphone.
+Linux uses a GTK 3 desktop panel and Windows uses a native Win32 panel. Windows can route live processed audio to an explicitly selected playback endpoint, with a separately installed virtual cable required to expose the audio as a microphone. While the route is active, closing the Windows panel hides it to the system tray; the tray menu reopens the panel, stops routing, or quits ClearMic.
 
 ## 📚 Developer documentation
 
